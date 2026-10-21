@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+build/
+*.o
+*.so
+*.a
+*.exe
+*.out
+
+results/raw/
