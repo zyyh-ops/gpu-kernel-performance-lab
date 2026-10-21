@@ -49,7 +49,9 @@ def main():
     a = torch.randn((args.M, args.K), device="cuda", dtype=torch.float16)
     b = torch.randn((args.K, args.N), device="cuda", dtype=torch.float16)
     c = torch.empty((args.M, args.N), device="cuda", dtype=torch.float16)
-    ref = a @ b   # Not timed. Ensure every tested configuration computes correct results.
+    
+    torch.backends.cuda.matmul.fp32_precision = "ieee"
+    ref_fp32 = torch.matmul(a.float(), b.float())   # Not timed. Ensure every tested configuration computes correct results.
     device = torch.cuda.current_device()
     info = {
         "experiment": args.experiment,
@@ -78,7 +80,7 @@ def main():
 
         kernel = launch()  # JIT/compile outside timing.
         torch.cuda.synchronize()
-        torch.testing.assert_close(c, ref, rtol=1e-2, atol=1e-2)
+        torch.testing.assert_close(c.float(), ref_fp32, rtol=1e-2, atol=1e-2)
         timings = [triton.testing.do_bench(launch, warmup=args.warmup_ms, rep=args.rep_ms)
                    for _ in range(args.repeats)]
         ms = statistics.median(timings)
