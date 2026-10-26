@@ -1,0 +1,92 @@
+{
+  "record_type": "historical_reference",
+  "validation_status": "historical_only_not_reproduced_on_refactored_code",
+  "source": "Mini-GPT_Week13_Handoff(1).docx, historical Week 13 experiments",
+  "platform_reported": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "architecture": "sm_89",
+    "triton": "3.8.0"
+  },
+  "workload": {
+    "M": 4096,
+    "N": 4096,
+    "K": 4096,
+    "dtype_inputs": "fp16",
+    "dtype_accumulator": "fp32",
+    "dtype_output": "fp16"
+  },
+  "matmul_spill_comparison": [
+    {
+      "block_m": 128,
+      "block_n": 256,
+      "block_k": 32,
+      "num_warps": 4,
+      "num_stages": null,
+      "tflops": 22.86,
+      "time_ms": 6.013,
+      "n_regs_reported": 255,
+      "n_spills_reported": 300,
+      "shared_kib_reported": 48
+    },
+    {
+      "block_m": 128,
+      "block_n": 256,
+      "block_k": 32,
+      "num_warps": 8,
+      "num_stages": null,
+      "tflops": 173.34,
+      "time_ms": 0.7929,
+      "n_regs_reported": 240,
+      "n_spills_reported": 0,
+      "shared_kib_reported": 48
+    }
+  ],
+  "stage_sweep": [
+    {
+      "num_stages": 1,
+      "time_ms": 1.1338,
+      "tflops": 121.22
+    },
+    {
+      "num_stages": 2,
+      "time_ms": 0.9437,
+      "tflops": 145.64
+    },
+    {
+      "num_stages": 3,
+      "time_ms": 0.8091,
+      "tflops": 169.87
+    },
+    {
+      "num_stages": 4,
+      "time_ms": 0.8062,
+      "tflops": 170.48
+    }
+  ],
+  "block_k_sweep": [
+    {
+      "block_k": 16,
+      "tflops": 155.3
+    },
+    {
+      "block_k": 32,
+      "tflops": 170.0
+    },
+    {
+      "block_k": 64,
+      "tflops": 163.01
+    }
+  ],
+  "autotune_reported_best": {
+    "block_m": 128,
+    "block_n": 256,
+    "block_k": 32,
+    "num_warps": 8,
+    "num_stages": 3
+  },
+  "limitations": [
+    "Values were transcribed from historical handoff, not obtained by running refactored files.",
+    "Exact num_stages for spill comparison was not stated in the handoff table and is left null.",
+    "Do not compare against measurements from a different harness, GPU, or environment as though they were controlled A/B."
+  ]
+}

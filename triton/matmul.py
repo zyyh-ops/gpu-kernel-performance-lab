@@ -1,3 +1,9 @@
+"""FP16 Tensor-Core GEMM. Supports fixed-config diagnosis and separate autotuning.
+
+The computational kernel is intentionally close to the Week-13 reference.
+Scope: 2-D contiguous CUDA FP16 A[M,K] @ B[K,N] -> FP16 C[M,N], FP32 accum.
+"""
+
 from dataclasses import dataclass
 
 import torch

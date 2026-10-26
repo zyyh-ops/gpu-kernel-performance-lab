@@ -2,12 +2,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-
 build/
 *.o
 *.so
 *.a
 *.exe
 *.out
-
-results/raw/
+results/raw/*
+!results/raw/.gitkeep
+docs/
+README_PHASE1.md

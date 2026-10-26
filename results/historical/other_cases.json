@@ -1,0 +1,29 @@
+{
+  "record_type": "historical_reference",
+  "validation_status": "historical_only",
+  "sources": [
+    "Mini-GPT_Week10-12_Handoff(2).docx",
+    "Mini-GPT_Week13_Handoff(1).docx"
+  ],
+  "cuda_transpose": {
+    "naive_effective_bw_gbps": 281.89,
+    "shared_effective_bw_gbps": 820.33,
+    "padded_effective_bw_gbps": 830.65,
+    "note": "effective bandwidth, not raw DRAM traffic"
+  },
+  "cuda_double_buffer_low_occupancy": {
+    "single_gflops": 5144.52,
+    "double_gflops": 6572.29,
+    "speedup_reported": 1.27753,
+    "note": "low occupancy controlled microbenchmark case only"
+  },
+  "paged_kv_write": {
+    "page_size": 16,
+    "block_f": 512,
+    "num_warps": 4,
+    "sequential_effective_bw_gbps": 855.71,
+    "random_effective_bw_gbps": 822.13,
+    "reported_random_penalty_pct": 3.92,
+    "note": "effective bandwidth, not exact DRAM throughput. Cannot attribute to L2/TLB without counters."
+  }
+}
