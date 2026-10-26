@@ -7,10 +7,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_PY = [
     "triton/matmul.py",
+    "triton/paged_kv_write.py",
     "tests/test_matmul.py",
+    "tests/test_paged_kv.py",
+    "tests/test_paged_kv_mapping_cpu.py",
     "benchmarks/bench_matmul.py",
+    "benchmarks/bench_paged_kv.py",
     "scripts/inspect_matmul.py",
     "scripts/autotune_matmul.py",
+    "scripts/inspect_paged_kv.py",
+    "scripts/paged_kv_mapping_model.py",
 ]
 REQUIRED_DOCS = [
     "README.md",
@@ -21,7 +27,6 @@ REQUIRED_DOCS = [
     "docs/cases/paged_kv_write.md",
 ]
 PENDING_SOURCES = [
-    "triton/paged_kv_write.py",
     "triton/softmax.py",
     "triton/vector_add.py",
     "cuda/memory/matrix_transpose.cu",

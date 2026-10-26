@@ -11,4 +11,3 @@ build/
 results/raw/*
 !results/raw/.gitkeep
 docs/
-README_PHASE1.md

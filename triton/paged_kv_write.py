@@ -1,6 +1,24 @@
+"""Paged KV Write and linear-control kernels for contiguous FP16 K/V storage.
+
+Input K/V shape: [num_tokens, n_features]; page cache shape:
+[num_blocks, page_size, n_features]. The cache is NOT an attention kernel:
+it ONLY writes token key/value vectors into physical slots.
+
+Slot mappings MUST be a one-to-one set of valid physical slot indices.
+No -1/skip sentinel, aliasing/duplicate mapping, or noncontiguous layout is supported.
+"""
+from dataclasses import dataclass
+
 import torch
 import triton
 import triton.language as tl
+
+
+@dataclass(frozen=True)
+class KVWriteConfig:
+    page_size: int = 16
+    block_f: int = 128
+    num_warps: int = 4
 
 
 @triton.jit
@@ -14,24 +32,24 @@ def paged_kv_write_kernel(
     PAGE_SIZE: tl.constexpr,
     BLOCK_F: tl.constexpr,
 ):
+    # Preserve the mapping logic from the Week-13 original.
     token = tl.program_id(0)
     feature_block = tl.program_id(1)
-
-    features_offset = feature_block * BLOCK_F + tl.arange(0, BLOCK_F)
-    features_mask = features_offset < n_features
+    feature_offsets = feature_block * BLOCK_F + tl.arange(0, BLOCK_F)
+    feature_mask = feature_offsets < n_features
 
     slot = tl.load(slot_mapping_ptr + token)
     physical_block = slot // PAGE_SIZE
     physical_slot = slot % PAGE_SIZE
 
-    src_offsets = token * n_features + features_offset
-    dst_offsets = physical_block * cache_block_stride + physical_slot * cache_slot_stride + features_offset
+    src_offsets = token * n_features + feature_offsets
+    dst_offsets = (physical_block * cache_block_stride
+                   + physical_slot * cache_slot_stride + feature_offsets)
 
-    k = tl.load(k_ptr + src_offsets, mask=features_mask)
-    v = tl.load(v_ptr + src_offsets, mask=features_mask)
-
-    tl.store(k_cache_ptr + dst_offsets, k, mask=features_mask)
-    tl.store(v_cache_ptr + dst_offsets, v, mask=features_mask)
+    k = tl.load(k_ptr + src_offsets, mask=feature_mask, other=0)
+    v = tl.load(v_ptr + src_offsets, mask=feature_mask, other=0)
+    tl.store(k_cache_ptr + dst_offsets, k, mask=feature_mask)
+    tl.store(v_cache_ptr + dst_offsets, v, mask=feature_mask)
 
 
 @triton.jit
@@ -43,434 +61,102 @@ def linear_kv_write_kernel(
 ):
     token = tl.program_id(0)
     feature_block = tl.program_id(1)
-    features = feature_block * BLOCK_F + tl.arange(0, BLOCK_F)
-    mask = features < n_features
-    offset = token * n_features + features
-
-    k = tl.load(k_ptr + offset, mask=mask)
-    v = tl.load(v_ptr + offset, mask=mask)
-
-    tl.store(k_cache_ptr + offset, k, mask=mask)
-    tl.store(v_cache_ptr + offset, v, mask=mask)
+    feature_offsets = feature_block * BLOCK_F + tl.arange(0, BLOCK_F)
+    feature_mask = feature_offsets < n_features
+    offsets = token * n_features + feature_offsets
+    k = tl.load(k_ptr + offsets, mask=feature_mask, other=0)
+    v = tl.load(v_ptr + offsets, mask=feature_mask, other=0)
+    tl.store(k_cache_ptr + offsets, k, mask=feature_mask)
+    tl.store(v_cache_ptr + offsets, v, mask=feature_mask)
 
 
-def test_paged_kv_write():
-    torch.manual_seed(0)
-
-    num_tokens, num_blocks, page_size = 6, 4, 16
-    num_kv_heads, head_dim = 4, 64
-    n_features = num_kv_heads * head_dim
-
-    k = torch.randn(
-        (num_tokens, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    v = torch.randn_like(k)
-
-    k_cache = torch.zeros(
-        (num_blocks, page_size, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    v_cache = torch.zeros_like(k_cache)
-
-    slot_mapping = torch.tensor(
-        [18, 3, 47, 9, 32, 63],
-        device="cuda",
-        dtype=torch.int32,
-    )
-    BLOCK_F = 128
-
-    grid = (
-        num_tokens, triton.cdiv(n_features, BLOCK_F),
-    )
-    paged_kv_write_kernel[grid](
-        k, v,
-        k_cache, v_cache,
-        k_cache.stride(0), k_cache.stride(1),
-        slot_mapping,
-        n_features,
-        PAGE_SIZE=page_size,
-        BLOCK_F=BLOCK_F,
-        num_warps=4,
-    )
-
-    ref_k = torch.zeros_like(k_cache)
-    ref_v = torch.zeros_like(v_cache)
-
-    for t in range(num_tokens):
-        slot = int(slot_mapping[t].item())
-        block = slot // page_size
-        offset = slot % page_size
-        ref_k[block, offset] = k[t]
-        ref_v[block, offset] = v[t]
-
-    torch.testing.assert_close(
-        k_cache, ref_k,
-    )
-
-    torch.testing.assert_close(
-        v_cache, ref_v,
-    )
-
-    print("Paged KV write correctness: PASS")
+def _validate_source(k: torch.Tensor, v: torch.Tensor, cfg: KVWriteConfig) -> None:
+    if k.ndim != 2 or v.shape != k.shape or v.ndim != 2:
+        raise ValueError('Expected equal 2-D K/V tensors [num_tokens, n_features]')
+    if k.shape[0] <= 0 or k.shape[1] <= 0:
+        raise ValueError('Zero tokens/features not supported in this lab')
+    if cfg.page_size <= 0 or cfg.block_f <= 0 or cfg.block_f & (cfg.block_f - 1):
+        raise ValueError('page_size must be >0 and block_f a positive power of two')
+    if cfg.num_warps not in (1, 2, 4, 8, 16, 32):
+        raise ValueError('num_warps must be a supported positive power-of-two configuration')
+    if k.dtype != torch.float16 or v.dtype != k.dtype:
+        raise TypeError('The original lab supports FP16 K/V only')
+    if k.device.type != 'cuda' or v.device != k.device:
+        raise ValueError('K and V must live on the same CUDA device')
+    if not (k.is_contiguous() and v.is_contiguous()):
+        raise ValueError('K and V must be contiguous [num_tokens, n_features]')
 
 
-import statistics
-def benchmark_paged_vs_linear():
-    num_tokens = 32768
-    n_features = 512
-    
-    page_size = 16
-    num_blocks = triton.cdiv(num_tokens, page_size)
-    BLOCK_F = 128
-    num_warps = 4
-
-    k = torch.randn(
-        (num_tokens, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    v = torch.randn_like(k)
-
-    linear_k_cache = torch.empty_like(k)
-    linear_v_cache = torch.empty_like(v)
-
-    paged_k_cache = torch.empty(
-        (num_blocks, page_size, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    paged_v_cache = torch.empty_like(paged_k_cache)
-
-    sequential_slots = torch.arange(
-        num_tokens,
-        device="cuda",
-        dtype=torch.int32,
-    )
-    random_slots = torch.randperm(
-        num_tokens,
-        device="cuda",
-    ).to(torch.int32)
-
-    grid = (
-        num_tokens,
-        triton.cdiv(
-            n_features, BLOCK_F,
-        ),
-    )
-
-    def launch_linear():
-        linear_kv_write_kernel[grid](
-            k, v,
-            linear_k_cache, linear_v_cache,
-            n_features,
-            BLOCK_F=BLOCK_F,
-            num_warps=num_warps,
-        )
-    def launch_paged(slot_mapping):
-        paged_kv_write_kernel[grid](
-            k, v,
-            paged_k_cache, paged_v_cache,
-            paged_k_cache.stride(0),
-            paged_k_cache.stride(1),
-            slot_mapping,
-            n_features,
-            PAGE_SIZE=page_size,
-            BLOCK_F=BLOCK_F,
-        )
-
-    tests = [
-        ("linear", launch_linear),
-        ("paged-sequential", lambda: launch_paged(sequential_slots)),
-        ("paged-random", lambda: launch_paged(random_slots)),
-    ]
-
-    bytes_moved = 2 * 4 * num_tokens * n_features
-
-    for name, fn in tests:
-        fn()
-        torch.cuda.synchronize()
-        times = [triton.testing.do_bench(fn) for _ in range(5)]
-        ms = statistics.median(times)
-        gbps = bytes_moved / (ms * 1e-3) / 1e9
-        print(f"{name}: ")
-        print(f"time={ms:.4f}ms, BW={gbps:.2f} GB/s")
+def validate_slot_mapping(slot_mapping: torch.Tensor, capacity: int, n_tokens: int) -> None:
+    """Safety guard, not suitable inside benchmark timing (syncs GPU->CPU)."""
+    if slot_mapping.ndim != 1 or slot_mapping.numel() != n_tokens:
+        raise ValueError('slot_mapping must have one index per token')
+    slots = slot_mapping.detach().cpu().tolist()  # Intentionally syncs GPU.
+    if any(int(slot) < 0 or int(slot) >= capacity for slot in slots):
+        raise ValueError('slot_mapping contains an out-of-range slot')
+    if len(set(slots)) != len(slots):
+        raise ValueError('Duplicate physical slots cause conflicting writes')
 
 
-def benchmark_block_f():
-    num_tokens = 32768
-    n_features = 512
-    
-    page_size = 16
-    num_blocks = triton.cdiv(num_tokens, page_size)
-    num_warps = 4
-
-    k = torch.randn(
-        (num_tokens, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    v = torch.randn_like(k)
-
-    linear_k_cache = torch.empty_like(k)
-    linear_v_cache = torch.empty_like(v)
-
-    paged_k_cache = torch.empty(
-        (num_blocks, page_size, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    paged_v_cache = torch.empty_like(paged_k_cache)
-
-    sequential_slots = torch.arange(
-        num_tokens,
-        device="cuda",
-        dtype=torch.int32,
-    )
-    random_slots = torch.randperm(
-        num_tokens,
-        device="cuda",
-        dtype=torch.int32,
-    )
-
-    def launch_linear(BLOCK_F):
-        grid = (
-            num_tokens,
-            triton.cdiv(n_features, BLOCK_F),
-        )
-        return linear_kv_write_kernel[grid](
-            k, v,
-            linear_k_cache, linear_v_cache,
-            n_features,
-            BLOCK_F=BLOCK_F,
-            num_warps=num_warps,
-        )
-    def launch_paged(slot_mapping, BLOCK_F):
-        grid = (
-            num_tokens,
-            triton.cdiv(n_features, BLOCK_F),
-        )
-        return paged_kv_write_kernel[grid](
-            k, v,
-            paged_k_cache, paged_v_cache,
-            paged_k_cache.stride(0),
-            paged_k_cache.stride(1),
-            slot_mapping,
-            n_features,
-            PAGE_SIZE=page_size,
-            BLOCK_F=BLOCK_F,
-        )
-
-    block_sizes = [64, 128, 256, 512]
-
-    bytes_moved = 2 * 4 * num_tokens * n_features
-
-    for block_f in block_sizes:
-        linear_kernel = launch_linear(block_f)
-        paged_seq_kernel = launch_paged(sequential_slots, block_f)
-        torch.cuda.synchronize()
-
-        linear_fn = lambda: launch_linear(block_f)
-        paged_fn = lambda: launch_paged(sequential_slots, block_f)
-        
-        linear_times = [triton.testing.do_bench(linear_fn) for _ in range(5)]
-        paged_seq_times = [triton.testing.do_bench(paged_fn) for _ in range(5)]
-        linear_ms = statistics.median(linear_times)
-        paged_seq_ms = statistics.median(paged_seq_times)
-
-        linear_gbps = bytes_moved / (linear_ms * 1e-3) / 1e9
-        paged_gbps = bytes_moved / (paged_seq_ms * 1e-3) / 1e9
-
-        print("=" * 40)
-        print("linear: ")
-        print(f"time={linear_ms:.4f}ms, BW={linear_gbps:.2f} GB/s")
-        print(f"n_regs={linear_kernel.n_regs}, n_spills={linear_kernel.n_spills}")
-        print("paged-sequential: ")
-        print(f"time={paged_seq_ms:.4f}ms, BW={paged_gbps:.2f} GB/s")
-        print(f"n_regs={paged_seq_kernel.n_regs}, n_spills={paged_seq_kernel.n_spills}")
-        print(f"gap={((paged_seq_ms / linear_ms) - 1.0) * 100:.2f}%")
+def validate_paged_inputs(
+    k: torch.Tensor, v: torch.Tensor,
+    k_cache: torch.Tensor, v_cache: torch.Tensor,
+    slot_mapping: torch.Tensor, cfg: KVWriteConfig,
+    *, check_slots: bool = True,
+) -> None:
+    _validate_source(k, v, cfg)
+    if k_cache.ndim != 3 or v_cache.shape != k_cache.shape or v_cache.ndim != 3:
+        raise ValueError('Expected equal 3-D caches [num_blocks, page_size, n_features]')
+    if k_cache.shape[0] <= 0 or k_cache.shape[1:] != (cfg.page_size, k.shape[1]):
+        raise ValueError('Cache shape does not match page_size/features')
+    if k_cache.dtype != k.dtype or v_cache.dtype != k.dtype:
+        raise TypeError('K/V and caches must have the same dtype')
+    if k_cache.device != k.device or v_cache.device != k.device:
+        raise ValueError('K/V and caches must live on the same CUDA device')
+    if not (k_cache.is_contiguous() and v_cache.is_contiguous()):
+        raise ValueError('Only contiguous 3-D cache layouts are supported')
+    if slot_mapping.ndim != 1 or slot_mapping.shape[0] != k.shape[0]:
+        raise ValueError('slot_mapping must have shape [num_tokens]')
+    if slot_mapping.dtype != torch.int32 or slot_mapping.device != k.device or not slot_mapping.is_contiguous():
+        raise ValueError('slot_mapping must be contiguous CUDA int32 on K/V device')
+    if check_slots:
+        validate_slot_mapping(slot_mapping, k_cache.shape[0] * cfg.page_size, k.shape[0])
 
 
-def inspect_kv_kernel(
-    paged,
-    BLOCK_F,
+def launch_paged(
+    k: torch.Tensor, v: torch.Tensor,
+    k_cache: torch.Tensor, v_cache: torch.Tensor,
+    slot_mapping: torch.Tensor, cfg: KVWriteConfig = KVWriteConfig(),
+    *, check_slots: bool = True,
 ):
-    num_tokens = 32768
-    n_features = 512
-    page_size = 16
-    num_warps = 4
+    """Launch paged write; return compiled kernel handle.
 
-    k = torch.randn(
-        (num_tokens, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    v = torch.randn_like(k)
-    grid = (
-        num_tokens,
-        triton.cdiv(n_features, BLOCK_F),
+    Set check_slots=False ONLY when an immutable valid slot mapping has
+    already passed safety validation outside the timed region.
+    """
+    validate_paged_inputs(k, v, k_cache, v_cache, slot_mapping, cfg, check_slots=check_slots)
+    grid = (k.shape[0], triton.cdiv(k.shape[1], cfg.block_f))
+    return paged_kv_write_kernel[grid](
+        k, v, k_cache, v_cache,
+        k_cache.stride(0), k_cache.stride(1), slot_mapping, k.shape[1],
+        PAGE_SIZE=cfg.page_size, BLOCK_F=cfg.block_f, num_warps=cfg.num_warps,
     )
 
-    if not paged:
-        k_cache = torch.empty_like(k)
-        v_cache = torch.empty_like(v)
 
-        kernel = linear_kv_write_kernel.warmup(
-            k, v,
-            k_cache, v_cache,
-            n_features,
-            BLOCK_F=BLOCK_F,
-            num_warps=num_warps,
-            grid=grid,
-        )
-    else:
-        num_blocks = triton.cdiv(num_tokens, page_size)
-        k_cache = torch.empty(
-            (num_blocks, page_size, n_features),
-            device="cuda",
-            dtype=torch.float16,
-        )
-        v_cache = torch.empty_like(k_cache)
-
-        slots = torch.arange(
-            num_tokens,
-            device="cuda",
-            dtype=torch.int32,
-        )
-
-        kernel = paged_kv_write_kernel.warmup(
-            k, v,
-            k_cache, v_cache,
-            k_cache.stride(0), k_cache.stride(1),
-            slots,
-            n_features,
-            PAGE_SIZE=page_size,
-            num_warps=num_warps,
-            BLOCK_F=BLOCK_F,
-            grid=grid,
-        )
-
-    kernel._init_handles()
-    print("=" * 70)
-    print(f"{'paged' if paged else 'linear'}, BLOCK_F={BLOCK_F}")
-    print(f"n_regs={kernel.n_regs}, n_spills={kernel.n_spills}")
-
-    ptx = kernel.asm["ptx"]
-    keywords = [
-        "ld.global", "st.global",
-        "shr.", "shl.", "and.", "div.",
-        "rem.", "mad.", "mul.",
-    ]
-    for line in ptx.splitlines():
-        if any(k in line for k in keywords):
-            print(line)
-
-
-def benchmark_num_warps():
-    num_tokens = 32768
-    n_features = 512
-    
-    page_size = 16
-    num_blocks = triton.cdiv(num_tokens, page_size)
-    BLOCK_F = 512
-
-    k = torch.randn(
-        (num_tokens, n_features),
-        device="cuda",
-        dtype=torch.float16,
+def launch_linear(
+    k: torch.Tensor, v: torch.Tensor,
+    linear_k_cache: torch.Tensor, linear_v_cache: torch.Tensor,
+    cfg: KVWriteConfig = KVWriteConfig(),
+):
+    """Contiguous control, used to study paging/address-generation cost."""
+    _validate_source(k, v, cfg)
+    if linear_k_cache.shape != k.shape or linear_v_cache.shape != k.shape:
+        raise ValueError('Linear cache must match K/V shape')
+    for cache in (linear_k_cache, linear_v_cache):
+        if cache.device != k.device or cache.dtype != k.dtype or not cache.is_contiguous():
+            raise ValueError('Linear cache must be contiguous CUDA FP16')
+    grid = (k.shape[0], triton.cdiv(k.shape[1], cfg.block_f))
+    return linear_kv_write_kernel[grid](
+        k, v, linear_k_cache, linear_v_cache, k.shape[1],
+        BLOCK_F=cfg.block_f, num_warps=cfg.num_warps,
     )
-    v = torch.randn_like(k)
-
-    linear_k_cache = torch.empty_like(k)
-    linear_v_cache = torch.empty_like(v)
-
-    paged_k_cache = torch.empty(
-        (num_blocks, page_size, n_features),
-        device="cuda",
-        dtype=torch.float16,
-    )
-    paged_v_cache = torch.empty_like(paged_k_cache)
-
-    sequential_slots = torch.arange(
-        num_tokens,
-        device="cuda",
-        dtype=torch.int32,
-    )
-    random_slots = torch.randperm(
-        num_tokens,
-        device="cuda",
-        dtype=torch.int32,
-    )
-    grid = (
-        num_tokens,
-        triton.cdiv(n_features, BLOCK_F)
-    )
-
-    def launch_paged(slot_mapping, num_warps):
-        return paged_kv_write_kernel[grid](
-            k, v,
-            paged_k_cache, paged_v_cache,
-            paged_k_cache.stride(0),
-            paged_k_cache.stride(1),
-            slot_mapping,
-            n_features,
-            PAGE_SIZE=page_size,
-            BLOCK_F=BLOCK_F,
-            num_warps=num_warps,
-        )
-
-    bytes_moved = 2 * 4 * num_tokens * n_features
-    num_warps_list: list[int] = [1, 2, 4, 8]
-
-    # for num_warps in num_warps_list:
-    #     paged_seq_kernel = launch_paged(sequential_slots, num_warps)
-    #     torch.cuda.synchronize()
-
-    #     paged_fn = lambda: launch_paged(sequential_slots, num_warps)
-    #     paged_seq_times = [triton.testing.do_bench(paged_fn) for _ in range(5)]
-
-    #     paged_seq_ms = statistics.median(paged_seq_times)
-    #     paged_gbps = bytes_moved / (paged_seq_ms * 1e-3) / 1e9
-
-    #     print("=" * 40)
-    #     print("paged-sequential: ")
-    #     print(f"num_warps={num_warps}")
-    #     print(f"time={paged_seq_ms:.4f}ms, BW={paged_gbps:.2f} GB/s")
-    #     print(f"n_regs={paged_seq_kernel.n_regs}, n_spills={paged_seq_kernel.n_spills}")
-
-    paged_seq_kernel = launch_paged(sequential_slots, 4)
-    paged_random_kernel = launch_paged(random_slots, 4)
-    torch.cuda.synchronize()
-
-    paged_seq_fn = lambda: launch_paged(sequential_slots, 4)
-    paged_random_fn = lambda: launch_paged(random_slots, 4)
-
-    paged_seq_times = [triton.testing.do_bench(paged_seq_fn) for _ in range(7)]
-    paged_seq_ms = statistics.median(paged_seq_times)
-    paged_random_times = [triton.testing.do_bench(paged_random_fn) for _ in range(7)]
-    paged_random_ms = statistics.median(paged_random_times)
-
-    paged_seq_gbps = bytes_moved / (paged_seq_ms * 1e-3) / 1e9
-    paged_random_gbps = bytes_moved / (paged_random_ms * 1e-3) / 1e9
-
-    print("=" * 40)
-    print("paged-sequential: ")
-    print(f"time={paged_seq_ms:.4f}ms, BW={paged_seq_gbps:.2f} GB/s")
-    print(f"n_regs={paged_seq_kernel.n_regs}, n_spills={paged_seq_kernel.n_spills}")
-
-    print("paged-random: ")
-    print(f"time={paged_random_ms:.4f}ms, BW={paged_random_gbps:.2f} GB/s")
-    print(f"n_regs={paged_random_kernel.n_regs}, n_spills={paged_random_kernel.n_spills}")
-    print(f"{(paged_seq_gbps - paged_random_gbps) / paged_seq_gbps * 100:.2f}%")
-
-
-if __name__ == "__main__":
-    # test_paged_kv_write()
-    # benchmark_paged_vs_linear()
-    # benchmark_block_f()
-    # for block_f in [128, 256, 512]:
-    #     inspect_kv_kernel(False, block_f)
-    #     inspect_kv_kernel(True, block_f)
-    benchmark_num_warps()
