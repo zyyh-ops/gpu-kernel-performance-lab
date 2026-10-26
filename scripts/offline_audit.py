@@ -17,6 +17,8 @@ REQUIRED_PY = [
     "scripts/autotune_matmul.py",
     "scripts/inspect_paged_kv.py",
     "scripts/paged_kv_mapping_model.py",
+    "scripts/transpose_mapping_model.py",
+    "tests/test_transpose_mapping_cpu.py",
 ]
 REQUIRED_DOCS = [
     "README.md",
@@ -25,11 +27,11 @@ REQUIRED_DOCS = [
     "docs/gpu_validation_queue.md",
     "docs/cases/matmul_spill.md",
     "docs/cases/paged_kv_write.md",
+    "docs/cases/cuda_transpose.md",
 ]
 PENDING_SOURCES = [
     "triton/softmax.py",
     "triton/vector_add.py",
-    "cuda/memory/matrix_transpose.cu",
     "cuda/optimization/double_buffer.cu",
 ]
 
@@ -62,6 +64,12 @@ def main():
             print(f"[OK] Historical JSON and status: {name}")
         except (OSError, ValueError) as e:
             problems.append(f"Bad historical JSON: {name}: {e}")
+
+    for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "Makefile"]:
+        if not (ROOT / name).is_file():
+            problems.append(f"MISSING CUDA candidate: {name}")
+        else:
+            print(f"[OK] CUDA candidate file present (not compiled): {name}")
 
     for name in PENDING_SOURCES:
         print(f"[INFO] Source {'available' if (ROOT/name).is_file() else 'not yet migrated'}: {name}")

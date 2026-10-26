@@ -9,7 +9,10 @@
     "naive_effective_bw_gbps": 281.89,
     "shared_effective_bw_gbps": 820.33,
     "padded_effective_bw_gbps": 830.65,
-    "note": "effective bandwidth, not raw DRAM traffic"
+    "note": "effective bandwidth, not raw DRAM traffic",
+    "derived_shared_vs_naive_speedup": 2.9101,
+    "derived_padded_vs_shared_improvement_percent": 1.258,
+    "historical_prose_conflict": "Handoff prose stated approximately 0.17% padding improvement; supplied BW figures imply 1.26%. Recheck source and rerun."
   },
   "cuda_double_buffer_low_occupancy": {
     "single_gflops": 5144.52,

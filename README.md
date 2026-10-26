@@ -9,7 +9,7 @@ A GPU kernel implementation and performance diagnosis laboratory built from CUDA
 | Triton FP16 Matmul | Source + offline-checkable scripts | **Refactored; GPU revalidation pending** |
 | Triton Paged KV Write | Source, tests, benchmark, inspection | **Refactored; GPU revalidation pending** |
 | Triton Softmax / Vector Add | Listed in inventory only | **Source not yet migrated** |
-| CUDA 11 kernels | Directory/inventory only | **Sources not yet migrated** |
+| CUDA 11 kernels | Transpose implemented; 10 other originals not yet migrated | **Transpose CPU mapping checked; GPU pending** |
 | Historical measurements | JSON records | **Historical experiments; not a new benchmark run** |
 
 **IMPORTANT:** This package includes both supplied Matmul and Paged KV Write sources and their refactors. Other CUDA and Triton source files have not been supplied; do not mistake directory placeholders for implementations. Copy those original sources when ready.
@@ -70,3 +70,24 @@ No claim of GPU correctness/performance reproduction for the refactored Matmul o
 2. Paged KV Write: source refactored, tests/benchmarks/docs added; GPU revalidation pending.
 3. CUDA case studies: transplant source and consolidate tests/benchmarks (next).
 4. Obtain GPU: run full correctness + paired benchmarks and mark reproduced cases individually.
+
+## CUDA transpose (new Phase 4 module)
+
+Preserved original source in `docs/archive/matrix_transpose_week10_original.cu`. Main candidate in `cuda/memory/matrix_transpose.cu`, kernel definitions in `cuda/memory/transpose_kernels.cuh`.
+
+Offline, no CUDA toolkit required:
+
+```bash
+python -m unittest discover -s tests -p 'test_transpose_mapping_cpu.py' -v
+python scripts/offline_audit.py
+```
+
+When you have a CUDA GPU and nvcc:
+
+```bash
+make build/matrix_transpose CUDA_ARCH=sm_89
+make cuda-transpose-test
+make cuda-transpose-bench
+```
+
+See `docs/cases/cuda_transpose.md` for the full experiment and an inconsistency in earlier written padding percentages.
