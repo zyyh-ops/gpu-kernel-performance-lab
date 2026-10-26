@@ -19,6 +19,8 @@ REQUIRED_PY = [
     "scripts/paged_kv_mapping_model.py",
     "scripts/transpose_mapping_model.py",
     "tests/test_transpose_mapping_cpu.py",
+    "scripts/double_buffer_mapping_model.py",
+    "tests/test_double_buffer_mapping_cpu.py",
 ]
 REQUIRED_DOCS = [
     "README.md",
@@ -28,11 +30,11 @@ REQUIRED_DOCS = [
     "docs/cases/matmul_spill.md",
     "docs/cases/paged_kv_write.md",
     "docs/cases/cuda_transpose.md",
+    "docs/cases/cuda_double_buffer.md",
 ]
 PENDING_SOURCES = [
     "triton/softmax.py",
     "triton/vector_add.py",
-    "cuda/optimization/double_buffer.cu",
 ]
 
 
@@ -53,7 +55,7 @@ def main():
         if not (ROOT / name).is_file():
             problems.append(f"MISSING documentation: {name}")
 
-    for name in ["week13_matmul.json", "other_cases.json"]:
+    for name in ["week13_matmul.json", "week12_double_buffer.json", "other_cases.json"]:
         file = ROOT / "results" / "historical" / name
         try:
             record = json.loads(file.read_text(encoding="utf-8"))
@@ -65,7 +67,7 @@ def main():
         except (OSError, ValueError) as e:
             problems.append(f"Bad historical JSON: {name}: {e}")
 
-    for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "Makefile"]:
+    for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "cuda/optimization/double_buffer.cu", "cuda/optimization/double_buffer_kernels.cuh", "Makefile"]:
         if not (ROOT / name).is_file():
             problems.append(f"MISSING CUDA candidate: {name}")
         else:

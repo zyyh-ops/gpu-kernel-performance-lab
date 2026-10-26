@@ -1,0 +1,65 @@
+{
+  "record_type": "historical_reference",
+  "validation_status": "historical_only_original_shared_memory_alias_risk",
+  "source": "Mini-GPT Week 10-12 handoff + original double_buffer.cu supplied; historical data not reproduced on new source",
+  "historical_gpu": "RTX 4090, sm_89",
+  "workload": {
+    "N": 4096,
+    "tile": 16,
+    "dtype": "float32",
+    "extra_shared_kib": [
+      0,
+      16,
+      24,
+      32,
+      44
+    ]
+  },
+  "records": [
+    {
+      "extra_shared_kib": 0,
+      "single_gflops": 7345.06,
+      "single_occ_pct_reported": 100,
+      "double_gflops": 7526.5,
+      "double_occ_pct_reported": 100,
+      "reported_speedup": 1.0247
+    },
+    {
+      "extra_shared_kib": 16,
+      "single_gflops": 7294.46,
+      "single_occ_pct_reported": 83.3333,
+      "double_gflops": 7464.13,
+      "double_occ_pct_reported": 66.6667,
+      "reported_speedup": 1.02326
+    },
+    {
+      "extra_shared_kib": 24,
+      "single_gflops": 6646.22,
+      "single_occ_pct_reported": 50,
+      "double_gflops": 7313.54,
+      "double_occ_pct_reported": 50,
+      "reported_speedup": 1.10041
+    },
+    {
+      "extra_shared_kib": 32,
+      "single_gflops": 5144.54,
+      "single_occ_pct_reported": 33.3333,
+      "double_gflops": 6572.29,
+      "double_occ_pct_reported": 33.3333,
+      "reported_speedup": 1.27753
+    },
+    {
+      "extra_shared_kib": 44,
+      "single_gflops": 5144.52,
+      "single_occ_pct_reported": 33.3333,
+      "double_gflops": 6575.98,
+      "double_occ_pct_reported": 33.3333,
+      "reported_speedup": 1.27825
+    }
+  ],
+  "limitations": [
+    "Original CUDA source may alias two dynamic shared arrays. Historical results not guaranteed correct.",
+    "Occupancy historical values theoretical occupancy, not measured achieved occupancy.",
+    "New corrected kernels use explicit single dynamic shared allocation and must be rebenchmarked."
+  ]
+}
