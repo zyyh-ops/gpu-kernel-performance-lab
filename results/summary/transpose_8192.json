@@ -1,0 +1,15 @@
+{
+  "record_type": "current_gpu_benchmark",
+  "validation_status": "gpu_correctness_and_benchmark_passed",
+  "benchmark": "cuda_fp32_square_transpose",
+  "device": {"name": "NVIDIA GeForce RTX 5090", "compute_capability": "sm_120", "cuda_runtime_version": 12080, "cuda_driver_version": 13030, "nvcc_version": "12.8"},
+  "shape": {"n": 8192, "dtype": "fp32"},
+  "methodology": {"warmup_launches": 5, "repeats_per_sample": 50, "samples": 5, "timing": "cuda_events_per_batch_divided_by_repeat", "effective_bandwidth_definition": "2*n*n*sizeof(float)/median_latency"},
+  "results": {
+    "naive": {"median_latency_ms": 0.650996, "effective_gbps": 824.691002, "sample_latency_ms": [0.653678, 0.650996, 0.650964, 0.650757, 0.651100]},
+    "shared": {"median_latency_ms": 0.369149, "effective_gbps": 1454.345705, "sample_latency_ms": [0.369149, 0.369098, 0.368321, 0.369587, 0.370541]},
+    "padded": {"median_latency_ms": 0.366836, "effective_gbps": 1463.518185, "sample_latency_ms": [0.366812, 0.366089, 0.366860, 0.366836, 0.369757]},
+    "copy_baseline": {"median_latency_ms": 0.350753, "effective_gbps": 1530.625383, "sample_latency_ms": [0.350989, 0.350753, 0.350710, 0.350893, 0.350641]}
+  },
+  "notes": "The copy kernel is a streaming reference, not an equivalent transpose algorithm. Bandwidth is useful-byte effective throughput, not a DRAM hardware counter."
+}

@@ -1,212 +1,147 @@
 #include <cuda_runtime.h>
 
-#include <cmath>
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
-__global__ void vector_add(
-    const float* a,
-    const float* b,
-    float* c,
-    int n
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+#define CUDA_CHECK(call)                                                    \
+    do {                                                                    \
+        cudaError_t err_ = (call);                                          \
+        if (err_ != cudaSuccess) {                                          \
+            std::cerr << "CUDA error: " << cudaGetErrorString(err_)         \
+                      << " at " << __FILE__ << ":" << __LINE__ << "\n";     \
+            std::exit(EXIT_FAILURE);                                        \
+        }                                                                   \
+    } while (0)
 
+__global__ void vector_add(const float* a, const float* b, float* c, size_t n) {
+    size_t i = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (i < n) {
         c[i] = a[i] + b[i];
     }
 }
 
+struct BenchResult {
+    float single_ms;  // 单次 launch 的端到端时间（中位数），反映真实内核延迟
+    float batch_ms;   // 背靠背批量 launch 的平均周期，反映流水线吞吐（含 launch 间隙）
+};
 
-float benchmark(
-    const float* d_a,
-    const float* d_b,
-    float* d_c,
-    int N,
-    int block_size
-) {
-    int grid_size = (N + block_size - 1) / block_size;
+BenchResult benchmark(const float* d_a, const float* d_b, float* d_c,
+                      size_t N, int block_size) {
+    const int grid_size = static_cast<int>((N + block_size - 1) / block_size);
 
     constexpr int warmup = 10;
-    constexpr int repeat = 1000;
+    constexpr int repeat = 100;
 
-    for(int i = 0; i < warmup; i++) {
-        vector_add<<<grid_size, block_size>>>(
-            d_a,
-            d_b,
-            d_c,
-            N
-        );
+    for (int i = 0; i < warmup; i++) {
+        vector_add<<<grid_size, block_size>>>(d_a, d_b, d_c, N);
     }
-
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
 
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start);
-
-    for(int i = 0; i < repeat; i++) {
-        vector_add<<<grid_size, block_size>>>(
-            d_a,
-            d_b,
-            d_c,
-            N
-        );
+    // ---- 单次延迟：每次 launch 都用 event 包裹并同步，取中位数 ----
+    std::vector<float> single_times(repeat);
+    for (int i = 0; i < repeat; i++) {
+        CUDA_CHECK(cudaEventRecord(start));
+        vector_add<<<grid_size, block_size>>>(d_a, d_b, d_c, N);
+        CUDA_CHECK(cudaEventRecord(stop));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        CUDA_CHECK(cudaEventElapsedTime(&single_times[i], start, stop));
     }
+    std::sort(single_times.begin(), single_times.end());
+    const float single_ms = single_times[repeat / 2];
 
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
+    // ---- 批量吞吐：背靠背 launch，总时间 / repeat ----
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < repeat; i++) {
+        vector_add<<<grid_size, block_size>>>(d_a, d_b, d_c, N);
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    float total_ms = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&total_ms, start, stop));
+    const float batch_ms = total_ms / repeat;
 
-    float total_ms;
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
 
-    cudaEventElapsedTime(
-        &total_ms,
-        start,
-        stop
-    );
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return total_ms / repeat;
+    return {single_ms, batch_ms};
 }
 
-
 int main() {
-    const int N = 1 << 20;
+    // 1<<26 = 67,108,864 个 float，每个数组 256 MB，总访存 768 MB > L2(~96 MB)
+    const size_t N = static_cast<size_t>(1) << 26;
     const size_t bytes = N * sizeof(float);
 
-    std::vector<float> h_a(N);
-    std::vector<float> h_b(N);
-    std::vector<float> h_c(N);
-
-    for (int i = 0; i < N; i++) {
+    std::vector<float> h_a(N), h_b(N), h_c(N);
+    for (size_t i = 0; i < N; i++) {
         h_a[i] = static_cast<float>(i);
         h_b[i] = static_cast<float>(2 * i);
     }
 
-    float* d_a, *d_b, *d_c;
+    float *d_a = nullptr, *d_b = nullptr, *d_c = nullptr;
+    CUDA_CHECK(cudaMalloc(&d_a, bytes));
+    CUDA_CHECK(cudaMalloc(&d_b, bytes));
+    CUDA_CHECK(cudaMalloc(&d_c, bytes));
 
-    cudaMalloc(&d_a, bytes);
-    cudaMalloc(&d_b, bytes);
-    cudaMalloc(&d_c, bytes);
+    CUDA_CHECK(cudaMemcpy(d_a, h_a.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_b, h_b.data(), bytes, cudaMemcpyHostToDevice));
 
-    cudaMemcpy(
-        d_a,
-        h_a.data(),
-        bytes,
-        cudaMemcpyHostToDevice
-    );
-    
-    cudaMemcpy(
-        d_b,
-        h_b.data(),
-        bytes,
-        cudaMemcpyHostToDevice
-    );
+    // ---- 正确性校验（必须在任何性能测量之前）----
+    {
+        const int block = 256;
+        const int grid = static_cast<int>((N + block - 1) / block);
+        vector_add<<<grid, block>>>(d_a, d_b, d_c, N);
+        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaMemcpy(h_c.data(), d_c, bytes, cudaMemcpyDeviceToHost));
 
-    const int block_size = 256;
-    const int grid_size = (N + block_size - 1) / block_size;
-
-    // vector_add<<<grid_size, block_size>>>(
-    //     d_a,
-    //     d_b,
-    //     d_c,
-    //     N
-    // );
-
-    // cudaDeviceSynchronize();
-
-    // cudaMemcpy(
-    //     h_c.data(),
-    //     d_c,
-    //     bytes,
-    //     cudaMemcpyDeviceToHost
-    // );
-
-    // bool ok = true;
-
-    // for (int i = 0; i < N; i++) {
-    //     float expected = h_a[i] + h_b[i];
-
-    //     if (std::fabs(h_c[i] - expected) > 1e-6f) {
-    //         std::cout << "Mismatch at " << i << ": "
-    //         << " vs " << expected << '\n';
-
-    //         ok = false;
-    //         break;
-    //     }
-    // }
-
-    // std::cout << (ok ? "Correctness: PASS\n" : "Correctness: FAIL\n");
-
-    cudaEvent_t start, stop;
-
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    const int warmup = 10;
-    const int repeat = 1000;
-
-    for(int i = 0; i < warmup; i++) {
-        vector_add<<<grid_size, block_size>>>(
-            d_a, d_b, d_c, N
-        );
+        bool ok = true;
+        size_t bad_index = 0;
+        for (size_t i = 0; i < N; i++) {
+            const float expected = h_a[i] + h_b[i];
+            // 单次 float 加法在 GPU 与 CPU(SSE) 上均为 IEEE-754 确定性运算，
+            // 输入相同时结果应 bit-exact，直接比较即可。
+            if (h_c[i] != expected) {
+                ok = false;
+                bad_index = i;
+                break;
+            }
+        }
+        if (!ok) {
+            std::cout << "Correctness: FAIL at index " << bad_index
+                      << " (got " << h_c[bad_index]
+                      << ", expected " << h_a[bad_index] + h_b[bad_index] << ")\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "Correctness: PASS\n";
     }
 
-    cudaDeviceSynchronize();
+    const double bytes_moved = static_cast<double>(N) * 3 * sizeof(float);
 
-    cudaEventRecord(start);
+    const int block_sizes[] = {32, 64, 128, 256, 512, 1024};
+    for (int block_size : block_sizes) {
+        const int grid_size = static_cast<int>((N + block_size - 1) / block_size);
+        const BenchResult r = benchmark(d_a, d_b, d_c, N, block_size);
 
-    for(int i = 0; i < repeat; i++) {
-        vector_add<<<grid_size, block_size>>>(
-            d_a, d_b, d_c, N
-        );
+        const double bw_single = bytes_moved / (r.single_ms * 1e-3) / 1e9;
+        const double bw_batch  = bytes_moved / (r.batch_ms  * 1e-3) / 1e9;
+
+        std::cout << "block=" << block_size
+                  << ", grid=" << grid_size
+                  << ", warps/block=" << block_size / 32
+                  << " | single=" << r.single_ms * 1e3 << "us"
+                  << ", BW(single)=" << bw_single << "GB/s"
+                  << " | batch=" << r.batch_ms * 1e3 << "us"
+                  << ", BW(batch)=" << bw_batch << "GB/s\n";
     }
 
-    cudaEventRecord(stop);
-
-    cudaEventSynchronize(stop);
-
-    float milliseconds = 0.0f;
-
-    cudaEventElapsedTime(
-        &milliseconds,
-        start,
-        stop
-    );
-
-    float avg_ms = milliseconds / repeat;
-
-    std::cout << "Average kernel time: " << avg_ms << "ms\n";
-
-    int block_sizes[] = {
-        32, 64, 128, 256, 512, 1024
-    };
-
-    for(int block_size : block_sizes) {
-        int grid_size = (N + block_size - 1) / block_size;
-
-        float ms = benchmark(
-            d_a, d_b, d_c, N, block_size
-        );
-
-        double bytes = static_cast<double>(N) * 3 * sizeof(float);
-
-        double bandwidth = bytes / (ms * 1e-3) / 1e9;
-
-        std::cout << "block=" << block_size << ", grid=" << grid_size
-            << ", warps/block=" << block_size / 32 << ", time=" << ms << "ms"
-            << ", effective BW=" << bandwidth << "GB/s\n";
-    }
-
-
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
+    CUDA_CHECK(cudaFree(d_a));
+    CUDA_CHECK(cudaFree(d_b));
+    CUDA_CHECK(cudaFree(d_c));
 
     return 0;
 }

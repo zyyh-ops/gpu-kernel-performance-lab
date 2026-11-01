@@ -1,0 +1,66 @@
+{
+  "experiment": "locality",
+  "validation_status": "reproduced_on_gpu",
+  "timestamp_utc": "2026-11-01T07:04:47.073880+00:00",
+  "platform": {
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "torch_version": "2.6.0a0+ecf3bae40a.nv25.01",
+    "torch_cuda_version": "12.8",
+    "triton_version": "3.1.0"
+  },
+  "method": {
+    "tensor_dtype": "fp16",
+    "timer": "triton.testing.do_bench (CUDA events)",
+    "warmup_ms": 25,
+    "rep_ms": 100,
+    "outer_repeats": 5,
+    "paired_order": "alternates each repeat",
+    "bandwidth": "useful K+V read+write nominal bytes / elapsed (NOT measured DRAM bytes)",
+    "slot_validation": "unique and in-range checked outside timing",
+    "seed": 0
+  },
+  "results": [
+    {
+      "variant": "paged-sequential",
+      "num_tokens": 32768,
+      "n_features": 512,
+      "page_size": 16,
+      "block_f": 512,
+      "num_warps": 4,
+      "median_time_ms": 0.09108661115169525,
+      "samples_ms": [
+        0.09108661115169525,
+        0.09182430803775787,
+        0.09097670018672943,
+        0.09172660857439041,
+        0.0909222736954689
+      ],
+      "nominal_bytes": 134217728,
+      "effective_bw_gbps": 1473.5176367081476,
+      "correctness": "PASS"
+    },
+    {
+      "variant": "paged-random",
+      "num_tokens": 32768,
+      "n_features": 512,
+      "page_size": 16,
+      "block_f": 512,
+      "num_warps": 4,
+      "median_time_ms": 0.10108988732099533,
+      "samples_ms": [
+        0.10096282511949539,
+        0.10108988732099533,
+        0.10183366388082504,
+        0.10103191435337067,
+        0.10174020379781723
+      ],
+      "nominal_bytes": 134217728,
+      "effective_bw_gbps": 1327.7067722294746,
+      "correctness": "PASS"
+    }
+  ]
+}

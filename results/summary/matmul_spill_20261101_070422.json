@@ -1,0 +1,68 @@
+{
+  "experiment": "spill",
+  "shape": {
+    "M": 4096,
+    "N": 4096,
+    "K": 4096
+  },
+  "dtype": "fp16_inputs_fp32_accum_fp16_output",
+  "torch_version": "2.6.0a0+ecf3bae40a.nv25.01",
+  "triton_version": "3.1.0",
+  "torch_cuda_version": "12.8",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "capability": [
+    12,
+    0
+  ],
+  "measurement": {
+    "timer": "triton.testing.do_bench (CUDA events)",
+    "warmup_ms": 25,
+    "rep_ms": 100,
+    "outer_repeats": 3,
+    "aggregation": "median of each do_bench median",
+    "notes": "JIT compile and ref matmul excluded. Effective TFLOP/s = 2MNK / latency."
+  },
+  "timestamp_utc": "2026-11-01T07:04:18.702968+00:00",
+  "results": [
+    {
+      "config": {
+        "BLOCK_M": 128,
+        "BLOCK_N": 256,
+        "BLOCK_K": 32,
+        "num_warps": 4,
+        "num_stages": 3
+      },
+      "time_ms_median": 2.468518018722534,
+      "time_ms_outer_repeats": [
+        2.4670279026031494,
+        2.470322608947754,
+        2.468518018722534
+      ],
+      "tflops": 55.67670660274341,
+      "n_regs": 255,
+      "n_spills": 178,
+      "shared_bytes": 49152,
+      "correctness": "PASS"
+    },
+    {
+      "config": {
+        "BLOCK_M": 128,
+        "BLOCK_N": 256,
+        "BLOCK_K": 32,
+        "num_warps": 8,
+        "num_stages": 3
+      },
+      "time_ms_median": 0.7438816428184509,
+      "time_ms_outer_repeats": [
+        0.7434689402580261,
+        0.7446289658546448,
+        0.7438816428184509
+      ],
+      "tflops": 184.75916807311626,
+      "n_regs": 210,
+      "n_spills": 0,
+      "shared_bytes": 49152,
+      "correctness": "PASS"
+    }
+  ]
+}

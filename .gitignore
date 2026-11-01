@@ -11,3 +11,6 @@ build/
 results/raw/*
 !results/raw/.gitkeep
 docs/
+
+cuda/basics/vector_add_nsys.nsys-rep
+cuda/basics/vector_add_nsys.sqlite
