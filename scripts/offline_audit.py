@@ -1,6 +1,5 @@
-"""CPU-only source + historical-metadata check. It does NOT execute a GPU test."""
+"""CPU-only source and structure check. It does NOT execute a GPU test."""
 import ast
-import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,18 +54,6 @@ def main():
         if not (ROOT / name).is_file():
             problems.append(f"MISSING documentation: {name}")
 
-    for name in ["week13_matmul.json", "week12_double_buffer.json", "other_cases.json"]:
-        file = ROOT / "results" / "historical" / name
-        try:
-            record = json.loads(file.read_text(encoding="utf-8"))
-            if record.get("record_type") != "historical_reference":
-                problems.append(f"Incorrect provenance field: {name}")
-            if "historical" not in record.get("validation_status", ""):
-                problems.append(f"Incorrect validation status: {name}")
-            print(f"[OK] Historical JSON and status: {name}")
-        except (OSError, ValueError) as e:
-            problems.append(f"Bad historical JSON: {name}: {e}")
-
     for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "cuda/optimization/double_buffer.cu", "cuda/optimization/double_buffer_kernels.cuh", "Makefile"]:
         if not (ROOT / name).is_file():
             problems.append(f"MISSING CUDA candidate: {name}")
@@ -80,7 +67,7 @@ def main():
         for issue in problems:
             print("[FAIL]", issue)
         raise SystemExit(1)
-    print("[PASS] OFFLINE structural audit ONLY — GPU correctness/performance UNVERIFIED")
+    print("[PASS] OFFLINE structural audit ONLY — GPU correctness/performance NOT ASSESSED BY THIS AUDIT")
 
 
 if __name__ == "__main__":

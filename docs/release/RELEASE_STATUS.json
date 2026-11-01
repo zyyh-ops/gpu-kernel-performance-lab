@@ -1,0 +1,144 @@
+{
+  "project": "gpu-kernel-performance-lab",
+  "version": "v0.1.0-rc2-gpu-evidence",
+  "review_date": "2026-11-01",
+  "release_class": "gpu_evidence_candidate_conditional",
+  "gpu_validated": false,
+  "modules": {
+    "triton_matmul": {
+      "offline_source_present": true,
+      "offline_reference_checked": false,
+      "gpu_correctness": "完整补测 5/5 通过、无跳过，包含大尺寸与 autotune；旧 smoke 的 3 通过/2 跳过保留为历史记录；4096³ spill benchmark 两组 PASS",
+      "gpu_benchmark": "measured_rtx5090",
+      "evidence_file": "results/summary/matmul_spill_20261101_070422.json",
+      "correctness_evidence_files": [
+        "results/logs/gpu_smoke_5090.log",
+        "results/logs/matmul_autotune_5090.log",
+        "results/logs/matmul_full_5090.log"
+      ],
+      "smoke_test_counts": {
+        "passed": 3,
+        "skipped": 2
+      },
+      "assembly_evidence_files": [
+        "results/assembly/matmul_BM128_BN256_BK32_w4_s3.sass",
+        "results/assembly/matmul_BM128_BN256_BK32_w8_s3.sass"
+      ],
+      "static_ldl_stl_counts": {
+        "warps_4": 403,
+        "warps_8": 0
+      },
+      "autotune_observed_config": {
+        "BLOCK_M": 64,
+        "BLOCK_N": 128,
+        "BLOCK_K": 32,
+        "num_warps": 4,
+        "num_stages": 3,
+        "shape": null
+      },
+      "full_test_suite": {
+        "status": "PASS",
+        "passed": 5,
+        "skipped": 0,
+        "duration_seconds": 2.138,
+        "evidence_file": "results/logs/matmul_full_5090.log",
+        "tests": [
+          "test_autotuned_path",
+          "test_fixed_edge_shapes",
+          "test_invalid_cpu_input",
+          "test_large_4096",
+          "test_large_tile_and_warp_config"
+        ],
+        "provenance_note": "用户按前述启用命令运行并提供日志；日志本身未包含环境及源码版本，不推定该关联已齐备。"
+      }
+    },
+    "triton_paged_kv": {
+      "offline_source_present": true,
+      "offline_reference_checked": true,
+      "gpu_correctness": "GPU 测试 8 项通过；顺序/随机 benchmark 两组 PASS",
+      "gpu_benchmark": "measured_rtx5090",
+      "evidence_file": "results/summary/kv_locality_20261101_070449.json",
+      "correctness_evidence_files": [
+        "results/logs/gpu_smoke_5090.log"
+      ],
+      "smoke_test_counts": {
+        "passed": 8,
+        "skipped": 0
+      }
+    },
+    "cuda_transpose": {
+      "offline_source_present": true,
+      "offline_reference_checked": true,
+      "gpu_correctness": "smoke 中 9 尺寸乘 4 版本共 36 条 PASS；N=8192 JSON 报告正确性与 benchmark 通过",
+      "gpu_benchmark": "measured_rtx5090",
+      "evidence_file": "results/summary/transpose_8192.json",
+      "correctness_evidence_files": [
+        "results/logs/gpu_smoke_5090.log"
+      ]
+    },
+    "cuda_double_buffer": {
+      "offline_source_present": true,
+      "offline_reference_checked": true,
+      "gpu_correctness": "smoke 中 13 尺寸乘 2 版本共 26 条 PASS，包含 16B/4B 路径；N=1/17/33/65 memcheck 零错误",
+      "gpu_benchmark": "measured_rtx5090_fast16B_path",
+      "evidence_file": "results/summary/double_buffer_4096.json",
+      "correctness_evidence_files": [
+        "results/logs/gpu_smoke_5090.log",
+        "results/logs/double_buffer_memcheck_5090.log"
+      ],
+      "validation_limits": "性能 JSON 保留 gpu_measured_not_automatically_validated；小尺寸测试使用零额外共享预留，未逐项覆盖大尺寸与全部预留组合；无 racecheck 记录"
+    }
+  },
+  "historical_provenance": "当前工作区缺少旧历史 JSON 和原始源码归档，不以其作为当前公开性能结论的依据。",
+  "mandatory_gpu_release_gate": "docs/release/GPU_ACCEPTANCE.md",
+  "cpu_release_gate": "python scripts/release_check.py",
+  "gpu_evidence_received": true,
+  "gpu_model": "NVIDIA GeForce RTX 5090",
+  "compute_capability": "sm_120",
+  "benchmark_sources": [
+    "transpose_8192.json",
+    "double_buffer_4096.json",
+    "kv_locality_20261101_070449.json",
+    "matmul_spill_20261101_070422.json"
+  ],
+  "formal_gpu_release_pending": [
+    "补录完整环境、源码提交或差异、构建命令及输出，与 GPU 产物关联",
+    "补录独立 autotune 和 SASS 的实际形状、命令及来源",
+    "完成最终 Git 差异、GitHub CI 与许可选择"
+  ],
+  "review_scope": "本次仅核对当前源码、归档证据并执行本地 CPU 检查，没有重跑 GPU。",
+  "offline_validation": {
+    "review_date": "2026-11-01",
+    "cpu_mapping_tests": {
+      "status": "PASS",
+      "passed": 15
+    },
+    "release_check": {
+      "status": "PASS",
+      "exit_code": 0,
+      "scope": "结构、文档链接、候选版本标识、Python 语法和 15 项 CPU 映射测试；不自动验收 GPU 证据",
+      "resolved_issue": "已移除对三个旧历史 JSON 的依赖"
+    },
+    "remote_ci": "本次未运行",
+    "evidence_sha256": {
+      "status": "MATCH",
+      "files_checked": 11,
+      "scope": "四份原始测量 JSON、原有六份日志/汇编已核对散列；新完整补测日志已核查并记录散列"
+    }
+  },
+  "optional_followups": [
+    "Double Buffer racecheck 与更充分的大尺寸/共享预留组合正确性覆盖",
+    "Matmul stages/BK/tile、Paged KV 配置/规模扫描及汇编",
+    "Transpose Shared/Padded 跨会话重复测量"
+  ],
+  "evidence_scope_note": "原始 JSON 和日志保持不变；散列核验只标识已审查文件，不能代替源码版本或运行环境关联。",
+  "reviewed_additional_evidence_sha256": {
+    "results/logs/gpu_smoke_5090.log": "200690d548a8124dcc9bbab671f5f89626c739ebfb14412236f280ed1795d335",
+    "results/logs/double_buffer_memcheck_5090.log": "1fed3d991bbeefd4b03dbe3a8337e1ce2782935b16b20f1e8895a0a8720aaa6f",
+    "results/logs/matmul_autotune_5090.log": "04916bf34e26e19d0d99f756c3d2a7467659fd598534f22c5ce7aca0b0aff608",
+    "results/assembly/matmul_BM128_BN256_BK32_w4_s3.sass": "dd0c43c360a35984ecd4546de39cbea3426318ec6865c0f3b9461bd0d459231c",
+    "results/assembly/matmul_BM128_BN256_BK32_w8_s3.sass": "21ae83304b61001c84c01762c9764d8db6a0cb2402b95262c16c0838ab03162d",
+    "results/assembly/sass_instruction_counts.txt": "aca0dc54ebcba5e7f943b39ebf6310df3351071b65a13e3cae4a2ab0e1ea3541",
+    "results/logs/matmul_full_5090.log": "0ca50adde5a6957504fa96cfa2d62989b3b8094f8fc471bd60f9fd35e84a52f0"
+  }
+}

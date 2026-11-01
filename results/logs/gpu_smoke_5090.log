@@ -1,0 +1,90 @@
+./build/matrix_transpose --mode test --sizes 1,7,31,32,33,47,63,65,129
+PASS correctness: naive n=1
+PASS correctness: shared n=1
+PASS correctness: padded n=1
+PASS correctness: copy_baseline n=1
+PASS correctness: naive n=7
+PASS correctness: shared n=7
+PASS correctness: padded n=7
+PASS correctness: copy_baseline n=7
+PASS correctness: naive n=31
+PASS correctness: shared n=31
+PASS correctness: padded n=31
+PASS correctness: copy_baseline n=31
+PASS correctness: naive n=32
+PASS correctness: shared n=32
+PASS correctness: padded n=32
+PASS correctness: copy_baseline n=32
+PASS correctness: naive n=33
+PASS correctness: shared n=33
+PASS correctness: padded n=33
+PASS correctness: copy_baseline n=33
+PASS correctness: naive n=47
+PASS correctness: shared n=47
+PASS correctness: padded n=47
+PASS correctness: copy_baseline n=47
+PASS correctness: naive n=63
+PASS correctness: shared n=63
+PASS correctness: padded n=63
+PASS correctness: copy_baseline n=63
+PASS correctness: naive n=65
+PASS correctness: shared n=65
+PASS correctness: padded n=65
+PASS correctness: copy_baseline n=65
+PASS correctness: naive n=129
+PASS correctness: shared n=129
+PASS correctness: padded n=129
+PASS correctness: copy_baseline n=129
+./build/double_buffer --mode test --test-sizes 1,7,15,16,17,31,32,33,47,48,65,129,256
+[PASS] single-masked N=1 max_abs=0
+[PASS] double-async4-masked N=1 max_abs=0
+[PASS] single-masked N=7 max_abs=9.31323e-08
+[PASS] double-async4-masked N=7 max_abs=9.31323e-08
+[PASS] single-masked N=15 max_abs=3.22238e-07
+[PASS] double-async4-masked N=15 max_abs=3.22238e-07
+[PASS] single-fast16 N=16 max_abs=3.53903e-07
+[PASS] double-fast16 N=16 max_abs=3.53903e-07
+[PASS] single-masked N=17 max_abs=7.63685e-08
+[PASS] double-async4-masked N=17 max_abs=7.63685e-08
+[PASS] single-masked N=31 max_abs=4.45172e-07
+[PASS] double-async4-masked N=31 max_abs=4.45172e-07
+[PASS] single-fast16 N=32 max_abs=5.10365e-07
+[PASS] double-fast16 N=32 max_abs=5.10365e-07
+[PASS] single-masked N=33 max_abs=5.10365e-07
+[PASS] double-async4-masked N=33 max_abs=5.10365e-07
+[PASS] single-masked N=47 max_abs=6.35162e-07
+[PASS] double-async4-masked N=47 max_abs=6.35162e-07
+[PASS] single-fast16 N=48 max_abs=7.20844e-07
+[PASS] double-fast16 N=48 max_abs=7.20844e-07
+[PASS] single-masked N=65 max_abs=8.71718e-07
+[PASS] double-async4-masked N=65 max_abs=8.71718e-07
+[PASS] single-masked N=129 max_abs=2.0843e-06
+[PASS] double-async4-masked N=129 max_abs=2.0843e-06
+[PASS] single-fast16 N=256 max_abs=1.18278e-06
+[PASS] double-fast16 N=256 max_abs=1.18278e-06
+[PASS] CUDA correctness for all requested shapes (including tails)
+python -m unittest discover -s tests -p 'test_matmul.py' -v
+test_autotuned_path (test_matmul.TestMatmul.test_autotuned_path) ... skipped 'Set RUN_AUTOTUNE=1 to validate tuned path'
+test_fixed_edge_shapes (test_matmul.TestMatmul.test_fixed_edge_shapes) ... ok
+test_invalid_cpu_input (test_matmul.TestMatmul.test_invalid_cpu_input) ... ok
+test_large_4096 (test_matmul.TestMatmul.test_large_4096) ... skipped 'Set RUN_LARGE=1 for 4096³ case'
+test_large_tile_and_warp_config (test_matmul.TestMatmul.test_large_tile_and_warp_config) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.782s
+
+OK (skipped=2)
+python -m unittest discover -s tests -p 'test_paged_kv.py' -v
+test_feature_tail_and_page_boundary (test_paged_kv.TestPagedKVWrite.test_feature_tail_and_page_boundary) ... ok
+test_large_block_f_and_sparse_slots (test_paged_kv.TestPagedKVWrite.test_large_block_f_and_sparse_slots) ... ok
+test_linear_control_exact_copy (test_paged_kv.TestPagedKVWrite.test_linear_control_exact_copy) ... ok
+test_mapping_rejects_invalid_slots (test_paged_kv.TestPagedKVWrite.test_mapping_rejects_invalid_slots) ... ok
+test_more_than_one_feature_program (test_paged_kv.TestPagedKVWrite.test_more_than_one_feature_program) ... ok
+test_original_week13_case (test_paged_kv.TestPagedKVWrite.test_original_week13_case) ... ok
+test_random_unique_slots_and_warps (test_paged_kv.TestPagedKVWrite.test_random_unique_slots_and_warps) ... ok
+test_rejects_non_contiguous_source (test_paged_kv.TestPagedKVWrite.test_rejects_non_contiguous_source) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.584s
+
+OK

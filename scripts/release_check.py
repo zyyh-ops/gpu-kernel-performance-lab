@@ -23,8 +23,6 @@ def main():
         'docs/cases/cuda_transpose.md', 'docs/cases/cuda_double_buffer.md',
         'docs/release/RELEASE_REVIEW.md', 'docs/release/GPU_ACCEPTANCE.md',
         'docs/release/RELEASE_STATUS.json', 'docs/environment.md',
-        'results/historical/week13_matmul.json', 'results/historical/other_cases.json',
-        'results/historical/week12_double_buffer.json',
     ]
     missing = [x for x in required if not (ROOT / x).is_file()]
     if missing:
@@ -32,8 +30,8 @@ def main():
         return 1
 
     status = json.loads((ROOT/'docs/release/RELEASE_STATUS.json').read_text(encoding='utf-8'))
-    if status.get('gpu_validated') is not False or status.get('release_class') != 'offline_candidate':
-        print('[FAIL] Release labels are inconsistent with offline-only gate')
+    if status.get('gpu_validated') is not False or status.get('release_class') not in ('offline_candidate', 'gpu_evidence_candidate_conditional'):
+        print('[FAIL] Release status claims final GPU validation or has unknown release class')
         return 1
 
     # Minimal local Markdown-link existence check; ignore HTTP(S)/fragments.
@@ -57,8 +55,8 @@ def main():
     if run(sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*mapping_cpu.py', '-v') != 0:
         print('[FAIL] CPU reference tests')
         return 1
-    print('[PASS] OFFLINE RELEASE GATE: structure + historical provenance + CPU mapping/reference tests')
-    print('[PENDING] GPU compilation, GPU correctness, performance reproduction, formal release')
+    print('[PASS] OFFLINE RELEASE GATE: structure + documentation links + candidate status + Python syntax + CPU mapping/reference tests')
+    print('[INFO] GPU evidence (if present) is separate from this CPU-only gate; final GPU release requires GPU acceptance checklist')
     return 0
 
 

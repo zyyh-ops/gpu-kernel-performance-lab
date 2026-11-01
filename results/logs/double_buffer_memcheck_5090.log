@@ -1,0 +1,11 @@
+========= COMPUTE-SANITIZER
+[PASS] single-masked N=1 max_abs=0
+[PASS] double-async4-masked N=1 max_abs=0
+[PASS] single-masked N=17 max_abs=7.63685e-08
+[PASS] double-async4-masked N=17 max_abs=7.63685e-08
+[PASS] single-masked N=33 max_abs=5.10365e-07
+[PASS] double-async4-masked N=33 max_abs=5.10365e-07
+[PASS] single-masked N=65 max_abs=8.71718e-07
+[PASS] double-async4-masked N=65 max_abs=8.71718e-07
+[PASS] CUDA correctness for all requested shapes (including tails)
+========= ERROR SUMMARY: 0 errors

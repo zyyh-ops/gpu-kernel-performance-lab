@@ -1,0 +1,10 @@
+test_autotuned_path (test_matmul.TestMatmul.test_autotuned_path) ... ok
+test_fixed_edge_shapes (test_matmul.TestMatmul.test_fixed_edge_shapes) ... ok
+test_invalid_cpu_input (test_matmul.TestMatmul.test_invalid_cpu_input) ... ok
+test_large_4096 (test_matmul.TestMatmul.test_large_4096) ... ok
+test_large_tile_and_warp_config (test_matmul.TestMatmul.test_large_tile_and_warp_config) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 2.138s
+
+OK

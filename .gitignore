@@ -1,16 +1,27 @@
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+venv/
+
+# CUDA build
 build/
+dist/
 *.o
 *.so
 *.a
 *.exe
 *.out
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Raw temporary results
 results/raw/*
 !results/raw/.gitkeep
-docs/
 
-cuda/basics/vector_add_nsys.nsys-rep
-cuda/basics/vector_add_nsys.sqlite
+# Archives
+*.zip
