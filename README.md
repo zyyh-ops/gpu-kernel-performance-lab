@@ -16,7 +16,7 @@
 
 ## 1. RTX 5090 实验结果
 
-以下结果均来自 **NVIDIA GeForce RTX 5090（Compute Capability 12.0，`sm_120`）**。表中加速比仅表示同一实验内、相同工作负载下的实现对照，不代表相对 PyTorch、cuBLAS 或其他框架的加速比。
+以下结果均来自 **NVIDIA GeForce RTX 5090（Compute Capability 12.0，`sm_120`）**。表中加速比仅表示同一实验内、相同工作负载下的实现对照，不代表相对 PyTorch 或其他框架的加速比；唯一的框架对照是表末的 cuBLAS 一行，按同 shape、同 dtype、同计时口径单独测量。
 
 | 案例 | 实验条件 | 对照结果 | 观察 |
 |---|---|---|---|
@@ -24,11 +24,14 @@
 | Triton Matmul | FP16 输入、FP32 累加，4096³；BM=128、BN=256、BK=32、Stages=3 | 4 warps：55.68 TFLOP/s；8 warps：184.76 TFLOP/s | 8-warps 配置约 **3.32×**；`n_spills` 从 178 降至 0 |
 | Triton Paged KV Write | FP16，32768 Tokens × 512 Features，Page Size=16，BLOCK_F=512 | Sequential：1473.52 GB/s；Random：1327.71 GB/s | Random 映射的有效带宽低约 **9.90%** |
 | CUDA Double Buffering | FP32 GEMM，N=4096，TILE=16，额外预留 Shared Memory=32 KiB | Single：6751.35 GFLOP/s；Double：8704.09 GFLOP/s | 理论 Occupancy 均为 33.3%，Double Buffer 约 **1.29×** |
+| Triton vs cuBLAS | 4096³，FP16 输入 / FP32 累加，同一 `do_bench` 口径 | Triton：184.78 TFLOP/s；cuBLAS：186.41 TFLOP/s | Triton 达到 cuBLAS 约 **99%**；2048³ 以上输出与 cuBLAS 逐位相同；1024³ 时 Triton 仅 44%（cuBLAS 用 split-K 填满 SM） |
 
 ### 指标口径与解读
 
 - **Effective Bandwidth**：按名义有效读写字节数除以测量耗时计算，不等同于硬件性能计数器测得的 DRAM 实际流量。
 - **TFLOP/s / GFLOP/s**：按约定的运算量除以 Kernel 耗时计算，是派生吞吐指标，不是硬件计数器直接读数。
+- **cuBLAS 对照口径**：参考值取 cuBLAS 在 `allow_fp16_reduced_precision_reduction=False`（FP32 累加）下的输出，与 Triton kernel 的累加口径一致。若改用默认的 FP16 归约，在小 shape 上 split-K 的部分和会引入约 1–2 ulp 误差，1024³ 时会出现约 0.05% 元素失配，因此不把它作为参考真值。
+- **未归一化到峰值**：项目不把 TFLOP/s 折算成“峰值百分比”。RTX 5090 的 FP16（FP32 累加）参考时钟峰值为约 209.7 TFLOP/s（21760 核 × 4 × 2.41 GHz），而本机实测 SM 时钟更高（8192³ 下约 2.66 GHz，对应约 231.6 TFLOP/s），按参考峰值归一化会得出超过 100% 的误导性数字。跨实现比较一律用同 shape 的吞吐比值。
 - **Transpose Padding**：Padded 版本为 1463.52 GB/s，相比 Shared 版本的 1454.35 GB/s 高约 **0.63%**。这一差异较小，不将其作为稳定、普遍的额外加速结论。
 - **Transpose Copy Baseline**：本次为 1530.63 effective GB/s，仅作为连续读写参考，不是语义等价的 Transpose 实现。
 - **Double Buffering Occupancy**：通过额外动态 Shared Memory 预留构造资源约束；表中的 Occupancy 是理论 Occupancy，不是运行时硬件计数器观测值。约 1.29× 的结果仅适用于该实验配置，不应推广为所有 GEMM 工作负载的收益。
@@ -40,6 +43,7 @@
 - [CUDA Double Buffering Benchmark](results/summary/double_buffer_4096.json)
 - [Triton Matmul Register Spill Benchmark](results/summary/matmul_spill_20261101_070422.json)
 - [Triton Paged KV Locality Benchmark](results/summary/kv_locality_20261101_070449.json)
+- [cuBLAS 对照 Benchmark](results/summary/cublas_vs_triton_20261101_122628.json)
 - [Matmul SASS 指令统计](results/assembly/sass_instruction_counts.txt)
 
 ---

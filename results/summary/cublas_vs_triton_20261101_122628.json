@@ -1,0 +1,287 @@
+{
+  "experiment": "cublas_vs_triton",
+  "dtype": "fp16_inputs_fp32_accum_fp16_output",
+  "peak_tflops_assumed": 209.5,
+  "peak_note": "RTX 5090 FP16 Tensor Core dense 209.5 TFLOP/s (FP32 accumulate); 419 TFLOP/s with FP16 accumulate — do not mix the two.",
+  "torch_version": "2.6.0a0+ecf3bae40a.nv25.01",
+  "triton_version": "3.1.0",
+  "torch_cuda_version": "12.8",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "capability": [
+    12,
+    0
+  ],
+  "cublas_fp16_reduction_default": true,
+  "measurement": {
+    "timer": "triton.testing.do_bench (CUDA events)",
+    "warmup_ms": 25,
+    "rep_ms": 100,
+    "outer_repeats": 3,
+    "aggregation": "median of each do_bench median",
+    "l2_flushed": true,
+    "notes": "Both impls write into preallocated out tensors; TFLOP/s = 2MNK / latency."
+  },
+  "timestamp_utc": "2026-11-01T12:26:22.374111+00:00",
+  "results": [
+    {
+      "shape": {
+        "M": 1024,
+        "N": 1024,
+        "K": 1024
+      },
+      "correctness": "PASS",
+      "reference": "cublas fp32-accumulate (allow_fp16_reduced_precision_reduction=False)",
+      "tolerance": {
+        "rtol": 0.01,
+        "atol": 0.311279296875,
+        "atol_rule": "2 * max|ref| * 2^-10 (about 2 fp16 ulp)"
+      },
+      "max_abs_diff_triton_vs_reference": 0.0625,
+      "fp64_slice_rows": 64,
+      "max_abs_err_vs_fp64": {
+        "triton": 0.05978428456000984,
+        "cublas_fp32acc": 0.05978428456000984,
+        "cublas_fp16red": 0.07460120995528996
+      },
+      "cublas_fp16red_vs_fp32acc_max_abs_diff": 0.125,
+      "mismatch_count_vs_cublas_fp16red": 524,
+      "impls": {
+        "cublas_fp16_reduction_off": {
+          "time_ms": 0.02292356826364994,
+          "time_ms_repeats": [
+            0.02292778715491295,
+            0.02292356826364994,
+            0.022795867174863815
+          ],
+          "tflops": 93.68016459310479,
+          "pct_of_peak": 44.71606901818845
+        },
+        "cublas_fp16_reduction_on": {
+          "time_ms": 0.022506166249513626,
+          "time_ms_repeats": [
+            0.02250606194138527,
+            0.022517694160342216,
+            0.022506166249513626
+          ],
+          "tflops": 95.41756797634997,
+          "pct_of_peak": 45.54537850899761
+        },
+        "triton_fixed": {
+          "time_ms": 0.051636211574077606,
+          "time_ms_repeats": [
+            0.051636211574077606,
+            0.051639266312122345,
+            0.05163384974002838
+          ],
+          "tflops": 41.5887142479306,
+          "pct_of_peak": 19.851414915479996,
+          "config": {
+            "BLOCK_M": 128,
+            "BLOCK_N": 256,
+            "BLOCK_K": 32,
+            "num_warps": 8,
+            "num_stages": 3
+          },
+          "n_regs": 210,
+          "n_spills": 0
+        }
+      },
+      "triton_vs_cublas_pct": 44.39436504896115
+    },
+    {
+      "shape": {
+        "M": 2048,
+        "N": 2048,
+        "K": 2048
+      },
+      "correctness": "PASS",
+      "reference": "cublas fp32-accumulate (allow_fp16_reduced_precision_reduction=False)",
+      "tolerance": {
+        "rtol": 0.01,
+        "atol": 0.52734375,
+        "atol_rule": "2 * max|ref| * 2^-10 (about 2 fp16 ulp)"
+      },
+      "max_abs_diff_triton_vs_reference": 0.0,
+      "fp64_slice_rows": 64,
+      "max_abs_err_vs_fp64": {
+        "triton": 0.06253153595025651,
+        "cublas_fp32acc": 0.06253153595025651,
+        "cublas_fp16red": 0.06253153595025651
+      },
+      "cublas_fp16red_vs_fp32acc_max_abs_diff": 0.0,
+      "mismatch_count_vs_cublas_fp16red": 0,
+      "impls": {
+        "cublas_fp16_reduction_off": {
+          "time_ms": 0.10114046186208725,
+          "time_ms_repeats": [
+            0.10103869438171387,
+            0.1011909544467926,
+            0.10114046186208725
+          ],
+          "tflops": 169.8614863695804,
+          "pct_of_peak": 81.07946843416727
+        },
+        "cublas_fp16_reduction_on": {
+          "time_ms": 0.10121531039476395,
+          "time_ms_repeats": [
+            0.10117840021848679,
+            0.1012234017252922,
+            0.10121531039476395
+          ],
+          "tflops": 169.7358741181981,
+          "pct_of_peak": 81.01951031894896
+        },
+        "triton_fixed": {
+          "time_ms": 0.0983126312494278,
+          "time_ms_repeats": [
+            0.0983126312494278,
+            0.09828078746795654,
+            0.09903384745121002
+          ],
+          "tflops": 174.74732357038803,
+          "pct_of_peak": 83.41161029612795,
+          "config": {
+            "BLOCK_M": 128,
+            "BLOCK_N": 256,
+            "BLOCK_K": 32,
+            "num_warps": 8,
+            "num_stages": 3
+          },
+          "n_regs": 210,
+          "n_spills": 0
+        }
+      },
+      "triton_vs_cublas_pct": 102.87636550534896
+    },
+    {
+      "shape": {
+        "M": 4096,
+        "N": 4096,
+        "K": 4096
+      },
+      "correctness": "PASS",
+      "reference": "cublas fp32-accumulate (allow_fp16_reduced_precision_reduction=False)",
+      "tolerance": {
+        "rtol": 0.01,
+        "atol": 0.68115234375,
+        "atol_rule": "2 * max|ref| * 2^-10 (about 2 fp16 ulp)"
+      },
+      "max_abs_diff_triton_vs_reference": 0.0,
+      "fp64_slice_rows": 64,
+      "max_abs_err_vs_fp64": {
+        "triton": 0.12488981615751982,
+        "cublas_fp32acc": 0.12488981615751982,
+        "cublas_fp16red": 0.12488981615751982
+      },
+      "cublas_fp16red_vs_fp32acc_max_abs_diff": 0.0,
+      "mismatch_count_vs_cublas_fp16red": 0,
+      "impls": {
+        "cublas_fp16_reduction_off": {
+          "time_ms": 0.7372825145721436,
+          "time_ms_repeats": [
+            0.7372825145721436,
+            0.7371986508369446,
+            0.7374357581138611
+          ],
+          "tflops": 186.4128753301005,
+          "pct_of_peak": 88.97989275899785
+        },
+        "cublas_fp16_reduction_on": {
+          "time_ms": 0.7374576926231384,
+          "time_ms_repeats": [
+            0.7375696301460266,
+            0.7374576926231384,
+            0.7374503016471863
+          ],
+          "tflops": 186.36859422149274,
+          "pct_of_peak": 88.95875619164332
+        },
+        "triton_fixed": {
+          "time_ms": 0.7437992095947266,
+          "time_ms_repeats": [
+            0.7442616820335388,
+            0.7437992095947266,
+            0.7437731027603149
+          ],
+          "tflops": 184.77964442431482,
+          "pct_of_peak": 88.20030760110492,
+          "config": {
+            "BLOCK_M": 128,
+            "BLOCK_N": 256,
+            "BLOCK_K": 32,
+            "num_warps": 8,
+            "num_stages": 3
+          },
+          "n_regs": 210,
+          "n_spills": 0
+        }
+      },
+      "triton_vs_cublas_pct": 99.12386368007385
+    },
+    {
+      "shape": {
+        "M": 8192,
+        "N": 8192,
+        "K": 8192
+      },
+      "correctness": "PASS",
+      "reference": "cublas fp32-accumulate (allow_fp16_reduced_precision_reduction=False)",
+      "tolerance": {
+        "rtol": 0.01,
+        "atol": 1.0087890625,
+        "atol_rule": "2 * max|ref| * 2^-10 (about 2 fp16 ulp)"
+      },
+      "max_abs_diff_triton_vs_reference": 0.0,
+      "fp64_slice_rows": 64,
+      "max_abs_err_vs_fp64": {
+        "triton": 0.12847473180590896,
+        "cublas_fp32acc": 0.12847473180590896,
+        "cublas_fp16red": 0.12847473180590896
+      },
+      "cublas_fp16red_vs_fp32acc_max_abs_diff": 0.0,
+      "mismatch_count_vs_cublas_fp16red": 0,
+      "impls": {
+        "cublas_fp16_reduction_off": {
+          "time_ms": 4.759657382965088,
+          "time_ms_repeats": [
+            4.681578636169434,
+            4.759657382965088,
+            4.7816162109375
+          ],
+          "tflops": 231.00646523658926,
+          "pct_of_peak": 110.2656158647204
+        },
+        "cublas_fp16_reduction_on": {
+          "time_ms": 4.7773003578186035,
+          "time_ms_repeats": [
+            4.793347358703613,
+            4.7773003578186035,
+            4.757701873779297
+          ],
+          "tflops": 230.15333879447672,
+          "pct_of_peak": 109.85839560595548
+        },
+        "triton_fixed": {
+          "time_ms": 4.864035129547119,
+          "time_ms_repeats": [
+            4.8434367179870605,
+            4.864035129547119,
+            4.868568420410156
+          ],
+          "tflops": 226.04927770708215,
+          "pct_of_peak": 107.89941656662633,
+          "config": {
+            "BLOCK_M": 128,
+            "BLOCK_N": 256,
+            "BLOCK_K": 32,
+            "num_warps": 8,
+            "num_stages": 3
+          },
+          "n_regs": 210,
+          "n_spills": 0
+        }
+      },
+      "triton_vs_cublas_pct": 97.85409143227652
+    }
+  ]
+}

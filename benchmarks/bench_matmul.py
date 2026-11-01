@@ -49,6 +49,10 @@ def main():
     a = torch.randn((args.M, args.K), device="cuda", dtype=torch.float16)
     b = torch.randn((args.K, args.N), device="cuda", dtype=torch.float16)
     c = torch.empty((args.M, args.N), device="cuda", dtype=torch.float16)
+    # 参考值用 FP32 累加口径：PyTorch 默认允许 split-K 的 FP16 归约
+    # （allow_fp16_reduced_precision_reduction=True），在小 shape 上会让"参考"
+    # 比被测 kernel 更不准；成因与对照见 benchmarks/bench_cublas.py。
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
     ref = a @ b   # Not timed. Ensure every tested configuration computes correct results.
     device = torch.cuda.current_device()
     info = {
@@ -78,7 +82,10 @@ def main():
 
         kernel = launch()  # JIT/compile outside timing.
         torch.cuda.synchronize()
-        torch.testing.assert_close(c, ref, rtol=1e-2, atol=1e-2)
+        # FP16 输出在 |c| 量级上只有约 1 ulp 的分辨率，固定 atol=1e-2 会在
+        # 大 shape（输出量级数十到数百）上误判；容差按 2 ulp 缩放。
+        atol = max(1e-3, 2.0 * float(ref.abs().max().item()) * 2.0 ** -10)
+        torch.testing.assert_close(c, ref, rtol=1e-2, atol=atol)
         timings = [triton.testing.do_bench(launch, warmup=args.warmup_ms, rep=args.rep_ms)
                    for _ in range(args.repeats)]
         ms = statistics.median(timings)
