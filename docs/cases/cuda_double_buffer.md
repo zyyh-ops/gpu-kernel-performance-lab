@@ -1,56 +1,40 @@
 # CUDA GEMM：资源受限条件下的 cp.async 双缓冲
 
-更新日期：2026-11-01。当前证据包括 [N=4096 基准](../../results/summary/double_buffer_4096.json)、[边界尺寸正确性日志](../../results/logs/gpu_smoke_5090.log)和 [memcheck 日志](../../results/logs/double_buffer_memcheck_5090.log)。
+更新日期：2026-11-02。当前主结果为[带正确性验证的 N=4096 JSON](../../results/summary/double_buffer_4096.json)，辅以[集成测试](../../results/summary/double_buffer_integration.log)、[旧边界尺寸 smoke](../../results/logs/gpu_smoke_5090.log)、[memcheck](../../results/logs/double_buffer_memcheck_5090.log)和 [racecheck](../../results/logs/double_buffer_racecheck_5090.log)。
 
-## 实验问题
+## 实验问题与实现
 
-双缓冲在计算 tile t 时预取 tile t+1，用异步复制尝试隐藏加载延迟，也增加共享内存和同步开销。本实验对连续 FP32 方阵做 TILE=16 的 GEMM，给每个 block 额外预留共享内存，以控制理论驻留容量，比较 Single Buffer 与 Double Buffer。
+对连续 FP32 方阵做 TILE=16 的 GEMM，在计算 tile t 时预取 tile t+1，以异步复制隐藏部分加载延迟。额外预留共享内存不参与矩阵计算，用于构造资源压力；因此不能直接代表真实模型或所有 GEMM 的收益。
 
-额外预留空间不参与矩阵计算；因此这是受控的资源压力实验，不能直接代表真实模型或所有 GEMM 的收益。
-
-## 关键实现
-
-[当前 kernel](../../cuda/optimization/double_buffer_kernels.cuh)从一块 16B 对齐的动态共享内存中显式划分 [A0][A1][B0][B1]，避免依赖多个动态共享声明形成独立分配。
-
-- N 能被 16 整除：使用每次 16B 的 `cp.async` 快路径。
-- 其他正 N：每个元素使用 4B 异步复制，越界元素 zero-fill；无效源地址使用安全的分配基址。
-- Single Buffer 同样对非整 tile 做 mask；两种实现都保护输出边界。
-- `wait_group 0` 之后使用 `__syncthreads()`，完成整个 block 的数据交接。
-- 基础共享内存分别为 Single 2 KiB、Double 4 KiB，再加相同的实验额外预留量。
-
-流程为：预取首 tile → 等待并同步 → 预取下一 tile 同时计算当前 tile → 等待并同步 → 切换 ping/pong → 输出。
+[Kernel](../../cuda/optimization/double_buffer_kernels.cuh)使用一块 16B 对齐的动态共享内存，显式划分 [A0][A1][B0][B1]。N 能被 16 整除时走 16B `cp.async`；其余正 N 走 4B mask/zero-fill，Single 也处理边界。`wait_group 0` 后使用 `__syncthreads()` 完成交接。基础共享内存分别为 Single 2 KiB、Double 4 KiB，再加同一额外预留量。
 
 ## 当前 RTX 5090 结果
 
-N=4096，FP32，16B 快路径；5 次预热、每个样本 20 次 launch、5 个样本，A/B 顺序交替。
+N=4096，FP32，16B 快路径；5 次预热、每样本 20 次 launch、5 个样本，A/B 顺序交替。每档配置先分别对照 cuBLAS 验证两种实现，再使用 CUDA events 计时；参考计算、传输和比较不计入耗时。
 
 | 额外共享内存 | Single 理论 occupancy | Double 理论 occupancy | Single GFLOP/s | Double GFLOP/s | 加速比 |
 |---:|---:|---:|---:|---:|---:|
-| 0 KiB | 100.0% | 100.0% | 10288.46 | 10633.33 | 1.034× |
-| 16 KiB | 83.3% | 66.7% | 10116.73 | 10524.15 | 1.040× |
-| 24 KiB | 50.0% | 50.0% | 7913.60 | 8760.00 | 1.107× |
-| 32 KiB | 33.3% | 33.3% | 6751.35 | 8704.09 | 1.289× |
-| 44 KiB | 33.3% | 33.3% | 6751.72 | 8701.20 | 1.289× |
+| 0 KiB | 100.0% | 100.0% | 10115.24 | 10435.49 | 1.032× |
+| 16 KiB | 83.3% | 66.7% | 10042.15 | 10305.02 | 1.026× |
+| 24 KiB | 50.0% | 50.0% | 7870.63 | 8604.46 | 1.093× |
+| 32 KiB | 33.3% | 33.3% | 6836.51 | 8248.01 | 1.206× |
+| 44 KiB | 33.3% | 33.3% | 6834.60 | 8245.90 | 1.206× |
 
-在本实验较低理论驻留容量下，双缓冲相对收益更明显；32 KiB 行约为 **1.29×**。occupancy 由 API 理论计算得出，没有运行时 occupancy 硬件计数。不能将“理论 occupancy 相同”解释成所有资源条件完全相同。
+32 KiB 行为 **1.206×（约 1.21×，吞吐增加约 20.6%）**，Single / Double 延迟分别为 20.1037 / 16.6633 ms。此前约 1.29× 属于另一轮测量，不再作为本次已验证配置的数值。当前 JSON 在工作区中已被新结果替换；旧内容可从 Git 历史追溯，不能将两次运行拼成同一条曲线。
+
+在本次资源压力扫描中，低理论驻留容量下相对收益更明显。occupancy 是 API 理论值；相同 occupancy 不表示所有资源条件相同，也不是运行时硬件计数。JSON 保存聚合延迟，没有逐样本时钟/温度和延迟序列，不据此确定不同运行间差异的原因。
 
 ## 正确性与检查范围
 
-- smoke 覆盖 N=1、7、15、16、17、31、32、33、47、48、65、129、256；两种实现各 13 条 PASS，共 26 条，包含对齐 16B 和不规则 4B 路径。
-- 校验对照为 CPU FP64 累加，GPU FP32 允许误差 `5e-3 + 1e-3*abs(reference)`；当前测试以零额外预留量执行。
-- 已归档 memcheck 覆盖 N=1、17、33、65，两种实现输出 PASS，末尾为 `ERROR SUMMARY: 0 errors`。
-- 尚无 racecheck 结果；memcheck 零错误不能替代竞态检查。
-- benchmark JSON 保留 `gpu_measured_not_automatically_validated` 原始状态，因为直接运行 bench 不自动做正确性验收。独立测试日志提供补充证据，不能倒改 JSON 状态。
-- 小尺寸测试并未逐项验证 N=4096 及所有额外共享预留组合的输出；当前大尺寸性能记录应与这个限制一起阅读。
+- 新 JSON：`schema_version=2`、`gpu_correctness_and_benchmark_passed`。N=4096 × 0/16/24/32/44 KiB × Single/Double，共 **10 条 PASS**，对应 **5 条性能记录**。
+- 两种实现分别对照 `cublas_fp32_pedantic`；每条检查全部 16,777,216 个元素。容差为 `0.005 + 0.001*abs(reference)`，最大绝对误差约 `3.03e-5`，最大容差归一化误差约 `0.004964`；失配数及非有限值数均为 0。
+- 输入模式由 JSON 明确记录，本结论只适用于该模式和已测配置，不代表所有输入都经过验证。
+- 集成测试 **4/4 通过，无跳过**：3 项 GPU 集成测试（参考路径/边界/预留量、benchmark 同配置检查及输出防覆盖、无效资源配置失败）与 1 项主机数值测试。
+- 早期 smoke 覆盖 13 个尺寸 × 2 实现，共 26 条 PASS，CPU FP64 参考、零额外预留量，覆盖 16B 和 4B 路径。这与新大尺寸 cuBLAS 验证是不同记录。
+- memcheck：N=1/17/33/65，0 errors。racecheck：同组尺寸，0 errors、0 warnings。Sanitizer 日志没有记录额外预留量和完整构建来源，不能外推为 N=4096 五档都已通过 sanitizer，也不自动归到本次新二进制。
 
-## 复现
+## 复现与来源
 
-```bash
-make cuda-double-buffer-test CUDA_ARCH=sm_120
-make cuda-double-buffer-bench CUDA_ARCH=sm_120
-compute-sanitizer --tool memcheck ./build/double_buffer --mode test --test-sizes 1,17,33,65
-```
+完整命令和源码/环境归档见[验证流程](../double-buffer-validation.md)。直接 `--mode bench` 也会先验证同配置；`--json` 拒绝覆盖已有文件。Makefile 可通过 `DOUBLE_BUFFER_JSON` 指定新路径。
 
-Makefile 的 benchmark 目标依赖正确性目标；直接 `--mode bench` 不包含此前置条件。重跑会覆盖默认 JSON，应先留存旧结果。
-
-后续可补 racecheck、更多不规则尺寸及 N=4097 的独立性能基线。N=4096 与 N=4097 的负载不同，不能把两者之差当作纯粹的向量化收益。
+已记录基础提交与未提交修改状态，完整源码快照/构建关联仍待补齐，见[源码来源记录](../release/SOURCE_PROVENANCE.md)。本次核心补测已完成，其他形状、随机输入、更多 sanitizer 路径可选，不作为当前结果成立的追加要求。

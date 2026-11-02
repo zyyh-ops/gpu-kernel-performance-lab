@@ -1,13 +1,13 @@
 {
   "record_type": "derived_summary",
-  "date_utc": "2026-11-01",
+  "date_utc": "2026-11-02",
   "source_files_sha256": {
     "transpose_8192.json": "55d5e6944981c0d822f0e75b948d95de556e97f4f5b00b819ed8bf815920afa1",
-    "double_buffer_4096.json": "5a1289eb7c5501f8f37a6f6ada12fd7e3a9d509f34ea251ee4342a707e09fb2f",
+    "double_buffer_4096.json": "ddf4028bcee9a234242986808ed74e21c1c055903294c5901d0a40ab4eb5d5b7",
     "kv_locality_20261101_070449.json": "bbc5519a8cec7d4e9f613902f629868bc8f3c6437936bbeb89e79a848c0e6470",
     "matmul_spill_20261101_070422.json": "06030fae5826c51603e15649e5aee4ac31af052ec81ff94806db9b634b38ba5a"
   },
-  "source_scope": "RTX 5090 user-provided benchmark JSON; no independent GPU execution in this environment",
+  "source_scope": "Current RTX 5090 archived benchmark JSON, including user-provided Double Buffer validation rerun; recomputed metadata only, no independent GPU execution during documentation review.",
   "metrics": {
     "transpose_shared_vs_naive_speedup": 1.7635047094804537,
     "transpose_padded_vs_naive_speedup": 1.7746240826963549,
@@ -16,13 +16,20 @@
     "matmul_w8_vs_w4_speedup": 3.3184284658103764,
     "paged_random_bandwidth_penalty_pct": 9.89542716328906,
     "paged_random_latency_increase_pct": 10.982158676032716,
-    "double_buffer_low_theoretical_occupancy_33pct_speedup": 1.28923802
+    "double_buffer_low_theoretical_occupancy_33pct_speedup": 1.206463997,
+    "double_buffer_speedup_by_extra_shared_kib": {
+      "0": 1.031660182,
+      "16": 1.02617659,
+      "24": 1.093235501,
+      "32": 1.206463997,
+      "44": 1.206492646
+    }
   },
   "validation_boundaries": {
     "matmul": "Both JSON arms report correctness PASS; JIT/reference excluded from benchmark timing.",
     "paged_kv": "Both JSON arms report correctness PASS; slot validation outside timing.",
-    "transpose": "JSON metadata reports GPU correctness_and_benchmark_passed, but lacks individual test-case logs.",
-    "double_buffer": "JSON status gpu_measured_not_automatically_validated. User reported correctness tests passed separately; no machine-readable pass case logs attached.",
-    "not_claimed": "GPU assembly evidence, sanitizer memcheck, odd-sized 4B cp.async path and other tuning sweeps are not established by these four files alone."
+    "transpose": "N=8192 JSON reports correctness_and_benchmark_passed; separate GPU smoke contains 36 small-shape PASS entries.",
+    "double_buffer": "Schema v2: N=4096 x 5 reservations x 2 variants, all 10 comparisons against cuBLAS FP32 pedantic PASS; 5 matched performance records. Scope is the recorded deterministic input pattern and fast16 path.",
+    "not_claimed": "These four JSON files alone do not establish sanitizer or assembly coverage. Separate logs are indexed in docs/release/RELEASE_STATUS.json; exact source/build linkage remains partial."
   }
 }

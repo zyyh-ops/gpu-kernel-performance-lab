@@ -1,5 +1,9 @@
 {
-  "status": "gpu_measured_not_automatically_validated",
+  "schema_version": 2,
+  "status": "gpu_correctness_and_benchmark_passed",
+  "error": "",
+  "mode": "bench",
+  "reference_requested": "cublas",
   "variant": "single_vs_cp_async_double_buffer",
   "N": 4096, "tile": 16, "dtype": "float32",
   "copy_path": "cp.async16-fast",
@@ -8,11 +12,26 @@
   "nvcc_version": "12.8",
   "warmup": 5, "repeat": 20, "samples": 5,
   "units": {"latency": "ms/launch", "throughput": "GFLOP/s", "occupancy": "theoretical_pct"},
+  "input_pattern": "A[i]=(i%17-8)/8; B[i]=(i%13-6)/6",
+  "validation_policy": "each variant independently vs reference; validation excluded from timing",
+  "command": ["./build/double_buffer", "--mode", "bench", "--n", "4096", "--extra-kib", "0,16,24,32,44", "--reference", "cublas", "--warmup", "5", "--repeat", "20", "--samples", "5", "--json", "results/summary/double_buffer_4096_validated.json"],
+  "correctness": [
+    {"N": 4096, "extra_shared_kib": 0, "variant": "single-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 0, "variant": "double-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 16, "variant": "single-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 16, "variant": "double-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 24, "variant": "single-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 24, "variant": "double-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 32, "variant": "single-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 32, "variant": "double-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 44, "variant": "single-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"},
+    {"N": 4096, "extra_shared_kib": 44, "variant": "double-fast16", "reference": "cublas_fp32_pedantic", "cublas_version": 120803, "atol": 0.005, "rtol": 0.001, "max_abs_error_finite": 3.027915955e-05, "max_scaled_error_finite": 0.004964082461, "mismatch_count": 0, "nonfinite_count": 0, "elements_checked": 16777216, "status": "PASS"}
+  ],
   "results": [
-    {"extra_shared_kib": 0, "single_total_shared_bytes": 2048, "double_total_shared_bytes": 4096, "single_ms": 13.35855103, "double_ms": 12.92530212, "single_gflops": 10288.46266, "double_gflops": 10633.32618, "single_theoretical_occupancy_pct": 100, "double_theoretical_occupancy_pct": 100, "speedup_double_over_single": 1.033519441},
-    {"extra_shared_kib": 16, "single_total_shared_bytes": 18432, "double_total_shared_bytes": 20480, "single_ms": 13.58531189, "double_ms": 13.05939026, "single_gflops": 10116.73155, "double_gflops": 10524.14782, "single_theoretical_occupancy_pct": 83.33333333, "double_theoretical_occupancy_pct": 66.66666667, "speedup_double_over_single": 1.04027153},
-    {"extra_shared_kib": 24, "single_total_shared_bytes": 26624, "double_total_shared_bytes": 28672, "single_ms": 17.36743927, "double_ms": 15.68937073, "single_gflops": 7913.599198, "double_gflops": 8760.0042, "single_theoretical_occupancy_pct": 50, "double_theoretical_occupancy_pct": 50, "speedup_double_over_single": 1.106955758},
-    {"extra_shared_kib": 32, "single_total_shared_bytes": 34816, "double_total_shared_bytes": 36864, "single_ms": 20.35726624, "double_ms": 15.7901535, "single_gflops": 6751.34627, "double_gflops": 8704.092297, "single_theoretical_occupancy_pct": 33.33333333, "double_theoretical_occupancy_pct": 33.33333333, "speedup_double_over_single": 1.28923802},
-    {"extra_shared_kib": 44, "single_total_shared_bytes": 47104, "double_total_shared_bytes": 49152, "single_ms": 20.35615387, "double_ms": 15.79539948, "single_gflops": 6751.715199, "double_gflops": 8701.201492, "single_theoretical_occupancy_pct": 33.33333333, "double_theoretical_occupancy_pct": 33.33333333, "speedup_double_over_single": 1.288739414}
+    {"extra_shared_kib": 0, "single_total_shared_bytes": 2048, "double_total_shared_bytes": 4096, "single_ms": 13.58731689, "double_ms": 13.17034149, "single_gflops": 10115.23868, "double_gflops": 10435.48898, "single_theoretical_occupancy_pct": 100, "double_theoretical_occupancy_pct": 100, "speedup_double_over_single": 1.031660182},
+    {"extra_shared_kib": 16, "single_total_shared_bytes": 18432, "double_total_shared_bytes": 20480, "single_ms": 13.68621063, "double_ms": 13.33709106, "single_gflops": 10042.14805, "double_gflops": 10305.01725, "single_theoretical_occupancy_pct": 83.33333333, "double_theoretical_occupancy_pct": 66.66666667, "speedup_double_over_single": 1.02617659},
+    {"extra_shared_kib": 24, "single_total_shared_bytes": 26624, "double_total_shared_bytes": 28672, "single_ms": 17.46224518, "double_ms": 15.972995, "single_gflops": 7870.634736, "double_gflops": 8604.457305, "single_theoretical_occupancy_pct": 50, "double_theoretical_occupancy_pct": 50, "speedup_double_over_single": 1.093235501},
+    {"extra_shared_kib": 32, "single_total_shared_bytes": 34816, "double_total_shared_bytes": 36864, "single_ms": 20.10366364, "double_ms": 16.66329346, "single_gflops": 6836.512785, "double_gflops": 8248.006544, "single_theoretical_occupancy_pct": 33.33333333, "double_theoretical_occupancy_pct": 33.33333333, "speedup_double_over_single": 1.206463997},
+    {"extra_shared_kib": 44, "single_total_shared_bytes": 47104, "double_total_shared_bytes": 49152, "single_ms": 20.1092865, "double_ms": 16.66755829, "single_gflops": 6834.601192, "double_gflops": 8245.896075, "single_theoretical_occupancy_pct": 33.33333333, "double_theoretical_occupancy_pct": 33.33333333, "speedup_double_over_single": 1.206492646}
   ]
 }

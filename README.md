@@ -1,8 +1,11 @@
 # GPU Kernel Performance Lab
 
+新增：[Double Buffer 同配置验证与补测](docs/double-buffer-validation.md)。
+该流程已获得 GPU 补测记录：N=4096 五档预留量 × 两实现共 **10 条正确性 PASS**，集成测试 **4/4 通过、无跳过**；下文 Double Buffer 数据已同步为本轮结果。
+
 **基于 CUDA C++ 与 Triton 的 GPU Kernel 实现、正确性验证和性能分析实验项目**
 
-当前为 `v0.1.0-rc2-gpu-evidence` 候选版本（2026-11-01）。四组 GPU 测量及补充日志已归档；本次完整离线发布检查已通过（含 15 项 CPU 测试）；Matmul 完整补测已 5/5 通过且无跳过，环境与源码关联仍待补齐。文档入口见[中文文档导航与 GitHub 收录建议](docs/README.md)，完整状态见[发布审查](docs/release/RELEASE_REVIEW.md)。
+当前为 `v0.1.0-rc2-gpu-evidence` 候选版本（2026-11-02 更新）。四组 GPU 测量已归档；Matmul 完整补测 5/5 通过，Double Buffer 新增同配置 cuBLAS 验证和 GPU 集成记录。环境及基础提交/未提交状态已收到，完整源码快照与构建关联仍待补齐。文档入口见[中文文档导航与 GitHub 收录建议](docs/README.md)，完整状态见[发布审查](docs/release/RELEASE_REVIEW.md)。
 
 本项目围绕 GPU 性能工程中的几个典型问题展开：Global Memory 访问模式、Shared Memory 数据重排、Tensor Core GEMM 的寄存器压力、Paged KV Cache 的物理地址映射，以及异步数据搬运与计算重叠。
 
@@ -23,7 +26,7 @@
 | CUDA Transpose | FP32，8192 × 8192 | Naive：824.69 GB/s；Shared：1454.35 GB/s | Shared 相比 Naive 提升约 **1.76×** |
 | Triton Matmul | FP16 输入、FP32 累加，4096³；BM=128、BN=256、BK=32、Stages=3 | 4 warps：55.68 TFLOP/s；8 warps：184.76 TFLOP/s | 8-warps 配置约 **3.32×**；`n_spills` 从 178 降至 0 |
 | Triton Paged KV Write | FP16，32768 Tokens × 512 Features，Page Size=16，BLOCK_F=512 | Sequential：1473.52 GB/s；Random：1327.71 GB/s | Random 映射的有效带宽低约 **9.90%** |
-| CUDA Double Buffering | FP32 GEMM，N=4096，TILE=16，额外预留 Shared Memory=32 KiB | Single：6751.35 GFLOP/s；Double：8704.09 GFLOP/s | 理论 Occupancy 均为 33.3%，Double Buffer 约 **1.29×** |
+| CUDA Double Buffering | FP32 GEMM，N=4096，TILE=16，额外预留 Shared Memory=32 KiB | Single：6836.51 GFLOP/s；Double：8248.01 GFLOP/s | 理论 Occupancy 均为 33.3%，Double Buffer 约 **1.21×** |
 | Triton vs cuBLAS | 4096³，FP16 输入 / FP32 累加，同一 `do_bench` 口径 | Triton：184.78 TFLOP/s；cuBLAS：186.41 TFLOP/s | Triton 达到 cuBLAS 约 **99%**；2048³ 以上输出与 cuBLAS 逐位相同；1024³ 时 Triton 仅 44%（cuBLAS 用 split-K 填满 SM） |
 
 ### 指标口径与解读
@@ -34,7 +37,7 @@
 - **未归一化到峰值**：项目不把 TFLOP/s 折算成“峰值百分比”。RTX 5090 的 FP16（FP32 累加）参考时钟峰值为约 209.7 TFLOP/s（21760 核 × 4 × 2.41 GHz），而本机实测 SM 时钟更高（8192³ 下约 2.66 GHz，对应约 231.6 TFLOP/s），按参考峰值归一化会得出超过 100% 的误导性数字。跨实现比较一律用同 shape 的吞吐比值。
 - **Transpose Padding**：Padded 版本为 1463.52 GB/s，相比 Shared 版本的 1454.35 GB/s 高约 **0.63%**。这一差异较小，不将其作为稳定、普遍的额外加速结论。
 - **Transpose Copy Baseline**：本次为 1530.63 effective GB/s，仅作为连续读写参考，不是语义等价的 Transpose 实现。
-- **Double Buffering Occupancy**：通过额外动态 Shared Memory 预留构造资源约束；表中的 Occupancy 是理论 Occupancy，不是运行时硬件计数器观测值。约 1.29× 的结果仅适用于该实验配置，不应推广为所有 GEMM 工作负载的收益。
+- **Double Buffering Occupancy**：通过额外动态 Shared Memory 预留构造资源约束；表中的 Occupancy 是理论 Occupancy，不是运行时硬件计数器观测值。约 1.21× 的结果仅适用于该实验配置，不应推广为所有 GEMM 工作负载的收益。
 - **Paged KV Locality**：结果说明物理 Slot 的跨 Program 排列会影响该工作负载的性能，但当前没有硬件计数器证据将差异唯一归因于 L2、TLB 或 DRAM 分区。
 
 原始结果文件：
@@ -75,7 +78,7 @@
 - 非 16 整除尺寸使用带边界检查和 Zero-Fill 的 4-byte 异步拷贝路径，并对输出写入进行边界 Mask。
 - 通过额外 Shared Memory 预留改变理论 Occupancy，观察 Single / Double Buffer 的相对表现。
 
-RTX 5090 上，13 种尺寸分别对 Single 与 Double Buffer 进行 Correctness 测试，共 **26 项通过**。另使用 Compute Sanitizer Memcheck 检查 N=1、17、33、65，结果为 **0 errors**。
+早期 RTX 5090 smoke 中，13 种尺寸 × 两实现共 **26 项通过**。本次另补 N=4096、0/16/24/32/44 KiB 五档预留量，两实现分别对照 cuBLAS FP32，**10 条 PASS**，每条完整检查所有输出元素。独立集成测试 **4/4 通过、无跳过**。已归档 N=1/17/33/65 的 Memcheck 零错误和 Racecheck 零错误/警告；Sanitizer 范围不等同于大尺寸五档。
 
 本案例说明 Double Buffering 的收益取决于可被隐藏的访存延迟和资源约束，并非启用异步拷贝就一定更快。
 
@@ -156,6 +159,9 @@ cache[physical_block, physical_offset, feature_offset]
 | CUDA Transpose | 9 种尺寸 × 4 个实现（Naive / Shared / Padded / Copy） | **36 项 PASS** |
 | CUDA Double Buffering | 13 种尺寸 × 2 个实现（Single / Double），覆盖对齐与非对齐路径 | **26 项 PASS** |
 | CUDA Double Buffering | Compute Sanitizer Memcheck，N=1、17、33、65 | **0 errors** |
+| CUDA Double Buffering | N=4096，五档预留量 × 两实现，独立 cuBLAS 对照 | **10 条 PASS，五条性能结果** |
+| CUDA Double Buffering | 3 项 GPU 集成测试 + 1 项主机数值测试 | **4/4 PASS，无跳过** |
+| CUDA Double Buffering | Racecheck，N=1、17、33、65 | **0 errors、0 warnings** |
 | Triton Matmul | 4-warps / 8-warps 固定配置 Benchmark 中的 Correctness 检查 | **均 PASS** |
 | Triton Matmul | 独立 Autotune 路径 Correctness | **PASS** |
 | Triton Matmul | 完整单元测试，含大尺寸与 Autotune | **5/5 PASS，无跳过** |
@@ -168,7 +174,7 @@ cache[physical_block, physical_offset, feature_offset]
 - Compute Sanitizer 的 0 errors 结论仅对应本次执行的 N=1、17、33、65 和当前测试路径，不代表所有输入尺寸、所有配置均经过 Sanitizer。
 - CPU Reference Model 测试用于验证地址映射和索引语义，不能替代 GPU Kernel Correctness。
 
-GPU Smoke 日志：[gpu_smoke_5090.log](results/logs/gpu_smoke_5090.log)
+证据：[GPU Smoke](results/logs/gpu_smoke_5090.log)、[Double Buffer 集成](results/summary/double_buffer_integration.log)、[Racecheck](results/logs/double_buffer_racecheck_5090.log)、[源码来源](docs/release/SOURCE_PROVENANCE.md)。
 
 ---
 
@@ -215,12 +221,16 @@ gpu-kernel-performance-lab/
 | GPU | NVIDIA GeForce RTX 5090 |
 | Compute Capability | 12.0（`sm_120`） |
 | CUDA Runtime | 12.8 |
-| CUDA Driver API 支持版本 | 13030（驱动安装包版本未归档） |
+| CUDA Driver API 支持版本 | 13030 |
+| 驱动版本（NVIDIA-SMI / KMD） | 610.43.02 |
+| Python / 系统内核 | 3.12.3 / Linux 5.15.0-187-generic |
+| 宿主编译器 | GCC 13.3.0 |
+| Compute Sanitizer | 2025.1.0.0 |
 | NVCC | 12.8 |
 | PyTorch | `2.6.0a0+ecf3bae40a.nv25.01` |
 | Triton | 3.1.0 |
 
-上述版本是本项目 RTX 5090 实验记录中的环境，不代表所有平台都必须使用相同版本。复现实验时，应根据目标 GPU、驱动、CUDA Toolkit、PyTorch 和 Triton 的兼容关系配置环境。
+上述补录版本见[环境日志](results/logs/environment_5090.txt)，不倒推为每份早期产物的确定环境，也不代表所有平台都必须使用相同版本。复现实验时，应根据目标 GPU、驱动、CUDA Toolkit、PyTorch 和 Triton 的兼容关系配置环境。
 
 `triton/requirements.txt` 当前列出 `torch` 和 `triton`，未锁定具体版本；它不是完整的环境锁文件。安装时请确保使用支持目标 CUDA 环境的 PyTorch 发行包。
 
@@ -232,7 +242,7 @@ gpu-kernel-performance-lab/
 python scripts/release_check.py
 ```
 
-该命令检查项目结构、文档链接、候选版本标识和 Python 源码，并运行 CPU Reference Model 测试。**它不编译或执行 CUDA/Triton GPU Kernel，也不代表 GPU Correctness 通过。**
+该命令检查结构、文档链接、候选状态、Python 语法、15 项 CPU 映射测试及新增主机数值测试。后者需要 g++/clang++；未设置 `DOUBLE_BUFFER_BINARY` 时三项 GPU 集成测试会跳过。仅在 GPU 机器执行该命令，不等于完成 GPU 验证；本轮 GPU 结论来自独立无跳过日志。
 
 2026-11-01 本轮复查中，该命令退出码为 0，完整离线检查及 15 项 CPU 模型测试通过。脚本已移除对旧历史 JSON 的依赖；GPU 测量与日志证据另行核对，不属于该脚本的自动验证范围。
 
@@ -273,8 +283,8 @@ python benchmarks/bench_paged_kv.py \
 make cuda-transpose-bench CUDA_ARCH=sm_120
 
 # CUDA Double Buffering
-# 该 Makefile 目标会先运行 Double Buffering Correctness 测试
-make cuda-double-buffer-bench CUDA_ARCH=sm_120
+# 每档配置先独立对照参考，再计时；已有输出文件会被拒绝，请指定新文件名。
+make cuda-double-buffer-bench CUDA_ARCH=sm_120 DOUBLE_BUFFER_JSON=results/summary/double_buffer_next_run.json
 ```
 
 ### 5.5 Matmul Autotune 与 PTX/SASS 检查

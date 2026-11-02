@@ -55,6 +55,9 @@ def main():
     if run(sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*mapping_cpu.py', '-v') != 0:
         print('[FAIL] CPU reference tests')
         return 1
+    if run(sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_double_buffer_validation.py', '-v') != 0:
+        print('[FAIL] Double Buffer validation regression tests')
+        return 1
     print('[PASS] OFFLINE RELEASE GATE: structure + documentation links + candidate status + Python syntax + CPU mapping/reference tests')
     print('[INFO] GPU evidence (if present) is separate from this CPU-only gate; final GPU release requires GPU acceptance checklist')
     return 0

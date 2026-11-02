@@ -1,5 +1,7 @@
 #include "double_buffer_kernels.cuh"
+#include "gemm_validation.h"
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -8,6 +10,8 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <sstream>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -16,6 +20,12 @@
     cudaError_t status = (call); \
     if (status != cudaSuccess) throw std::runtime_error( \
         std::string(#call) + ": " + cudaGetErrorString(status)); \
+} while(0)
+
+#define CUBLAS_CHECK(call) do { \
+    cublasStatus_t status = (call); \
+    if (status != CUBLAS_STATUS_SUCCESS) throw std::runtime_error( \
+        std::string(#call) + ": cuBLAS status " + std::to_string(int(status))); \
 } while(0)
 
 using Gemm = void(*)(const float*,const float*,float*,int);
@@ -43,6 +53,7 @@ const Variant& select_variant(bool use_double, int n) {
 struct Options {
     std::string mode = "test";
     std::string json_path;
+    std::string reference = "auto";
     int n = 4096;
     int warmup = 5;
     int repeat = 20;
@@ -89,9 +100,10 @@ Options parse(int argc, char** argv) {
         else if(arg=="--extra-kib") opt.extra_kib=parse_csv(val());
         else if(arg=="--test-sizes") opt.test_sizes=parse_csv(val());
         else if(arg=="--json") opt.json_path=val();
+        else if(arg=="--reference") opt.reference=val();
         else if(arg=="--help") {
             std::cout << "--mode test|bench|both --n 4096 --test-sizes 1,17,33,65 "
-                         "--extra-kib 0,16,24,32,44 "
+                         "--extra-kib 0,16,24,32,44 --reference auto|cpu|cublas "
                          "--warmup 5 --repeat 20 --samples 5 --json results/summary/double_buffer.json\n";
             std::exit(0);
         }
@@ -99,6 +111,11 @@ Options parse(int argc, char** argv) {
     }
     if (opt.mode!="test" && opt.mode!="bench" && opt.mode!="both")
         throw std::invalid_argument("--mode must be test, bench, or both");
+    if (opt.reference!="auto" && opt.reference!="cpu" && opt.reference!="cublas")
+        throw std::invalid_argument("--reference must be auto, cpu, or cublas");
+    // Historical evidence must never be silently overwritten.
+    if (!opt.json_path.empty() && std::filesystem::exists(opt.json_path))
+        throw std::invalid_argument("JSON already exists; choose a new --json path: "+opt.json_path);
     validate_n(opt.n);
     for (int sz:opt.test_sizes) validate_n(sz);
     if(opt.warmup<0 || opt.repeat<=0 || opt.samples<=0) throw std::invalid_argument("invalid timing repetitions");
@@ -142,33 +159,93 @@ void launch(const Variant& v, const DeviceMemory& d, int n, int extra_kib) {
     CUDA_CHECK(cudaGetLastError());
 }
 
-void test_one(int n, const Variant& v) {
-    validate_n(n);
-    DeviceMemory d(n);
+struct Reference {
+    std::string name;
+    int cublas_version = 0;
+    std::vector<double> values;
+};
+
+struct BlasHandle {
+    cublasHandle_t handle = nullptr;
+    BlasHandle() { CUBLAS_CHECK(cublasCreate(&handle)); }
+    ~BlasHandle() { if (handle) cublasDestroy(handle); }
+    BlasHandle(const BlasHandle&)=delete;
+    BlasHandle& operator=(const BlasHandle&)=delete;
+};
+
+Reference make_reference(const DeviceMemory& d, int n, const std::string& requested) {
     const size_t cells=size_t(n)*size_t(n);
-    std::vector<float> A(cells), B(cells), got(cells);
-    for(size_t i=0;i<cells;++i) {
-        A[i]=float(int(i%17)-8)/8.0f;
-        B[i]=float(int(i%13)-6)/6.0f;
+    Reference result;
+    const bool cpu = requested=="cpu" || (requested=="auto" && n<=256);
+    if (cpu) {
+        std::vector<float> a(cells), b(cells);
+        CUDA_CHECK(cudaMemcpy(a.data(),d.a,cells*sizeof(float),cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(b.data(),d.b,cells*sizeof(float),cudaMemcpyDeviceToHost));
+        result.name="cpu_fp64";
+        result.values=cpu_gemm_reference(a,b,n);
+        return result;
     }
-    CUDA_CHECK(cudaMemcpy(d.a,A.data(),cells*sizeof(float),cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d.b,B.data(),cells*sizeof(float),cudaMemcpyHostToDevice));
-    launch(v,d,n,0);
+    BlasHandle blas;
+    CUBLAS_CHECK(cublasGetVersion(blas.handle,&result.cublas_version));
+    CUBLAS_CHECK(cublasSetMathMode(blas.handle,CUBLAS_PEDANTIC_MATH));
+    const float alpha=1.f,beta=0.f;
+    // Row-major C=A*B is column-major C^T=B^T*A^T: swap pointers, no transpose.
+    CUBLAS_CHECK(cublasGemmEx(blas.handle,CUBLAS_OP_N,CUBLAS_OP_N,n,n,n,
+        &alpha,d.b,CUDA_R_32F,n,d.a,CUDA_R_32F,n,&beta,d.c,CUDA_R_32F,n,
+        CUBLAS_COMPUTE_32F_PEDANTIC,CUBLAS_GEMM_DEFAULT));
     CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<float> got(cells);
     CUDA_CHECK(cudaMemcpy(got.data(),d.c,cells*sizeof(float),cudaMemcpyDeviceToHost));
-    double max_abs=0.;
-    for(int i=0;i<n;++i) {
-        for(int j=0;j<n;++j) {
-            double expected=0.;
-            for(int k=0;k<n;++k) expected += double(A[size_t(i)*n+k])*double(B[size_t(k)*n+j]);
-            const double error=std::abs(expected-double(got[size_t(i)*n+j]));
-            max_abs=std::max(max_abs,error);
-            if (!std::isfinite(got[size_t(i)*n+j]) || error > 5e-3 + 1e-3 * std::abs(expected))
-                throw std::runtime_error(std::string(v.name)+" correctness FAIL N="+std::to_string(n)+
-                    " at ("+std::to_string(i)+","+std::to_string(j)+") error="+std::to_string(error));
-        }
+    result.values.assign(got.begin(),got.end());
+    result.name="cublas_fp32_pedantic";
+    // Cross-check row/column-major interpretation on small GPU test cases.
+    if (n<=256) {
+        const auto cpu_ref=make_reference(d,n,"cpu");
+        if (!compare_gemm(got,cpu_ref.values,5e-3,1e-3).passed())
+            throw std::runtime_error("cuBLAS reference disagrees with CPU FP64 reference");
     }
-    std::cout<<"[PASS] "<<v.name<<" N="<<n<<" max_abs="<<max_abs<<"\n";
+    return result;
+}
+
+struct Validation {
+    int n,extra_kib;
+    std::string variant,reference;
+    int cublas_version;
+    ErrorMetrics metrics;
+};
+
+void validate_shared(const Variant& v, int extra, const cudaDeviceProp& prop) {
+    if (required_bytes(v,extra)>prop.sharedMemPerBlock)
+        throw std::invalid_argument("Dynamic shared memory beyond default per-block device limit; extra_KiB="+std::to_string(extra));
+}
+
+bool test_one(const DeviceMemory& d, int n, const Variant& v, int extra,
+              const Reference& ref, const cudaDeviceProp& prop,
+              std::vector<Validation>& validations) {
+    validate_shared(v,extra,prop);
+    const size_t cells=size_t(n)*n;
+    // Poison output so missing stores cannot reuse cuBLAS or the other variant's output.
+    CUDA_CHECK(cudaMemset(d.c,0xff,cells*sizeof(float)));
+    launch(v,d,n,extra);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<float> got(cells);
+    CUDA_CHECK(cudaMemcpy(got.data(),d.c,cells*sizeof(float),cudaMemcpyDeviceToHost));
+    const auto metrics=compare_gemm(got,ref.values,5e-3,1e-3);
+    validations.push_back({n,extra,v.name,ref.name,ref.cublas_version,metrics});
+    std::cout<<(metrics.passed()?"[PASS] ":"[FAIL] ")<<v.name<<" N="<<n
+             <<" extra_KiB="<<extra<<" reference="<<ref.name
+             <<" max_abs="<<metrics.max_abs<<" max_scaled_error="<<metrics.max_scaled_error
+             <<" mismatches="<<metrics.mismatches<<" nonfinite="<<metrics.nonfinite<<"\n";
+    return metrics.passed();
+}
+
+void validate_pair(const DeviceMemory& d, int n, int extra, const Reference& ref,
+                   const cudaDeviceProp& prop, std::vector<Validation>& validations) {
+    const bool single_ok=test_one(d,n,select_variant(false,n),extra,ref,prop,validations);
+    const bool double_ok=test_one(d,n,select_variant(true,n),extra,ref,prop,validations);
+    if (!single_ok || !double_ok)
+        throw std::runtime_error("Correctness failed; benchmark aborted for N="+
+                                 std::to_string(n)+" extra_KiB="+std::to_string(extra));
 }
 
 struct Events {
@@ -216,28 +293,69 @@ struct Record {
 
 double gflops(int n, double ms) { return 2.0*double(n)*n*n/(ms*1e-3)/1e9; }
 
-void write_json(const Options& opt, const cudaDeviceProp& prop, const std::vector<Record>& records) {
+std::string json_string(const std::string& value) {
+    std::ostringstream out;
+    out<<'"';
+    for (unsigned char c:value) {
+        if (c=='"' || c=='\\') out<<'\\'<<char(c);
+        else if (c<0x20) out<<"\\u"<<std::hex<<std::setw(4)<<std::setfill('0')<<int(c)<<std::dec;
+        else out<<char(c);
+    }
+    out<<'"';
+    return out.str();
+}
+
+void write_json(const Options& opt, const cudaDeviceProp& prop, const std::vector<Record>& records,
+                const std::vector<Validation>& validations, const std::string& error,
+                const std::vector<std::string>& command) {
     if(opt.json_path.empty()) return;
     std::ofstream out(opt.json_path);
     if (!out) throw std::runtime_error("cannot write JSON: "+opt.json_path+
         " (create parent folder first)");
     int runtime_version=0,driver_version=0;
-    CUDA_CHECK(cudaRuntimeGetVersion(&runtime_version));
-    CUDA_CHECK(cudaDriverGetVersion(&driver_version));
+    // Best effort even after a CUDA error: preserve failure diagnostics.
+    cudaRuntimeGetVersion(&runtime_version);
+    cudaDriverGetVersion(&driver_version);
     out<<std::setprecision(10);
-    out<<"{\n  \"status\": \"gpu_measured_not_automatically_validated\",\n"
+    const char* status=!error.empty()?"FAILED":
+        (records.empty()?"gpu_correctness_passed":"gpu_correctness_and_benchmark_passed");
+    out<<"{\n  \"schema_version\": 2,\n  \"status\": "<<json_string(status)<<",\n"
+       <<"  \"error\": "<<json_string(error)<<",\n"
+       <<"  \"mode\": "<<json_string(opt.mode)<<",\n"
+       <<"  \"reference_requested\": "<<json_string(opt.reference)<<",\n"
        <<"  \"variant\": \"single_vs_cp_async_double_buffer\",\n"
-       <<"  \"N\": "<<opt.n<<", \"tile\": "<<TILE
+       <<"  \"N\": "<<(opt.mode=="test"?"null":std::to_string(opt.n))<<", \"tile\": "<<TILE
        <<", \"dtype\": \"float32\",\n"
-       <<"  \"copy_path\": \""<<(opt.n%TILE==0?"cp.async16-fast":"cp.async4-masked")<<"\",\n"
-       <<"  \"gpu\": \""<<prop.name<<"\", \"sm\": \""<<prop.major<<prop.minor<<"\",\n"
+       <<"  \"copy_path\": \""<<(opt.mode=="test"?"per_correctness_record":
+                                   (opt.n%TILE==0?"cp.async16-fast":"cp.async4-masked"))<<"\",\n"
+       <<"  \"gpu\": "<<json_string(prop.name)<<", \"sm\": \""<<prop.major<<prop.minor<<"\",\n"
        <<"  \"cuda_runtime_version\": "<<runtime_version
        <<", \"cuda_driver_version\": "<<driver_version<<",\n"
        <<"  \"nvcc_version\": \""<<__CUDACC_VER_MAJOR__<<"."<<__CUDACC_VER_MINOR__<<"\",\n"
        <<"  \"warmup\": "<<opt.warmup<<", \"repeat\": "<<opt.repeat
        <<", \"samples\": "<<opt.samples<<",\n"
        <<"  \"units\": {\"latency\": \"ms/launch\", \"throughput\": \"GFLOP/s\", \"occupancy\": \"theoretical_pct\"},\n"
-       <<"  \"results\": [\n";
+       <<"  \"input_pattern\": \"A[i]=(i%17-8)/8; B[i]=(i%13-6)/6\",\n"
+       <<"  \"validation_policy\": \"each variant independently vs reference; validation excluded from timing\",\n"
+       <<"  \"command\": [";
+    for (size_t i=0;i<command.size();++i) out<<(i?", ":"")<<json_string(command[i]);
+    out<<"],\n  \"correctness\": [\n";
+    for (size_t i=0;i<validations.size();++i) {
+        const auto& v=validations[i];
+        out<<"    {\"N\": "<<v.n<<", \"extra_shared_kib\": "<<v.extra_kib
+           <<", \"variant\": "<<json_string(v.variant)
+           <<", \"reference\": "<<json_string(v.reference)
+           <<", \"cublas_version\": "<<v.cublas_version
+           <<", \"atol\": 0.005, \"rtol\": 0.001"
+           <<", \"max_abs_error_finite\": "<<v.metrics.max_abs
+           <<", \"max_scaled_error_finite\": "<<v.metrics.max_scaled_error
+           <<", \"mismatch_count\": "<<v.metrics.mismatches
+           <<", \"nonfinite_count\": "<<v.metrics.nonfinite
+           <<", \"elements_checked\": "<<size_t(v.n)*v.n
+           <<", \"status\": "<<json_string(v.metrics.passed()?"PASS":"FAIL")<<"}"
+           <<(i+1==validations.size()?"\n":",\n");
+    }
+    out<<"  ],\n  \"results\": [\n";
     for(size_t i=0;i<records.size();++i) {
         const auto&r=records[i];
         out<<"    {\"extra_shared_kib\": "<<r.extra_kib
@@ -255,12 +373,13 @@ void write_json(const Options& opt, const cudaDeviceProp& prop, const std::vecto
     std::cout<<"[saved] "<<opt.json_path<<"\n";
 }
 
-void run_benchmark(const Options& opt, const cudaDeviceProp& prop) {
+void run_benchmark(const Options& opt, const cudaDeviceProp& prop,
+                   std::vector<Record>& records, std::vector<Validation>& validations) {
     validate_n(opt.n);
     DeviceMemory d(opt.n);
     load_inputs(d,opt.n);
-    // Benchmark mode does not replace correctness; run --mode test beforehand.
-    std::vector<Record> records;
+    // Reference generation and validation are strictly outside event timing.
+    const auto ref=make_reference(d,opt.n,opt.reference);
     const Variant& single=select_variant(false,opt.n);
     const Variant& dbl=select_variant(true,opt.n);
     std::cout<<"GPU: "<<prop.name<<" N="<<opt.n<<" tile="<<TILE
@@ -268,8 +387,7 @@ void run_benchmark(const Options& opt, const cudaDeviceProp& prop) {
     std::cout<<"extra_KiB | single_total_B | double_total_B | single_GF | single_occ% | double_GF | double_occ% | speedup\n";
     for(int extra:opt.extra_kib) {
         const size_t sb=required_bytes(single,extra),db=required_bytes(dbl,extra);
-        if(sb>prop.sharedMemPerBlock || db>prop.sharedMemPerBlock)
-            throw std::invalid_argument("Dynamic shared memory beyond default per-block device limit; extra_KiB="+std::to_string(extra));
+        validate_pair(d,opt.n,extra,ref,prop,validations);
         std::vector<double> ts,td;
         // Paired, alternating A/B order to reduce run-order bias.
         for(int i=0;i<opt.samples;++i) {
@@ -282,13 +400,14 @@ void run_benchmark(const Options& opt, const cudaDeviceProp& prop) {
             }
         }
         const double sm=median(ts),dm=median(td);
+        if (!std::isfinite(sm) || !std::isfinite(dm) || sm<=0. || dm<=0.)
+            throw std::runtime_error("Invalid benchmark latency; no throughput recorded");
         Record r{extra,sb,db,sm,dm,gflops(opt.n,sm),gflops(opt.n,dm),
             occupancy_pct(single,extra,prop),occupancy_pct(dbl,extra,prop),sm/dm};
         records.push_back(r);
         std::cout<<extra<<" | "<<sb<<" | "<<db<<" | "<<r.single_gflops<<" | "<<r.single_occ
                  <<" | "<<r.double_gflops<<" | "<<r.double_occ<<" | "<<r.speedup<<"x\n";
     }
-    write_json(opt,prop,records);
 }
 
 int main(int argc,char** argv) {
@@ -299,15 +418,28 @@ int main(int argc,char** argv) {
         cudaDeviceProp prop{};
         CUDA_CHECK(cudaGetDeviceProperties(&prop,device));
         if(prop.major<8) throw std::runtime_error("cp.async requires sm_80 or later");
-        if(opt.mode=="test"||opt.mode=="both") {
-            for(int n:opt.test_sizes) {
-                test_one(n,select_variant(false,n));
-                test_one(n,select_variant(true,n));
+        std::vector<Record> records;
+        std::vector<Validation> validations;
+        std::vector<std::string> command(argv,argv+argc);
+        std::string error;
+        try {
+            if(opt.mode=="test"||opt.mode=="both") {
+                for(int n:opt.test_sizes) {
+                    DeviceMemory d(n);
+                    load_inputs(d,n);
+                    const auto ref=make_reference(d,n,opt.reference);
+                    for(int extra:opt.extra_kib)
+                        validate_pair(d,n,extra,ref,prop,validations);
+                }
+                std::cout<<"[PASS] CUDA correctness for all requested shapes and reservations\n";
             }
-            std::cout<<"[PASS] CUDA correctness for all requested shapes (including tails)\n";
+            if(opt.mode=="bench"||opt.mode=="both") run_benchmark(opt,prop,records,validations);
+        } catch (const std::exception& e) {
+            error=e.what();
         }
-        if(opt.mode=="bench"||opt.mode=="both") run_benchmark(opt,prop);
-        return 0;
+        write_json(opt,prop,records,validations,error,command);
+        if (!error.empty()) std::cerr<<"[FAIL] "<<error<<"\n";
+        return error.empty()?0:1;
     } catch(const std::exception& e) {
         std::cerr<<"[FAIL] "<<e.what()<<"\n";
         return 1;

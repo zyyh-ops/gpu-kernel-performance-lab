@@ -1,7 +1,7 @@
 {
   "project": "gpu-kernel-performance-lab",
   "version": "v0.1.0-rc2-gpu-evidence",
-  "review_date": "2026-11-01",
+  "review_date": "2026-11-02",
   "release_class": "gpu_evidence_candidate_conditional",
   "gpu_validated": false,
   "modules": {
@@ -79,14 +79,62 @@
     "cuda_double_buffer": {
       "offline_source_present": true,
       "offline_reference_checked": true,
-      "gpu_correctness": "smoke 中 13 尺寸乘 2 版本共 26 条 PASS，包含 16B/4B 路径；N=1/17/33/65 memcheck 零错误",
-      "gpu_benchmark": "measured_rtx5090_fast16B_path",
+      "gpu_correctness": "N=4096 五档额外共享预留 × 两实现独立对照 cuBLAS FP32，10/10 PASS；另有旧 smoke 26 条边界 PASS",
+      "gpu_benchmark": "matched_correctness_and_performance_rtx5090_fast16B_path",
       "evidence_file": "results/summary/double_buffer_4096.json",
       "correctness_evidence_files": [
+        "results/summary/double_buffer_4096.json",
+        "results/summary/double_buffer_integration.log",
         "results/logs/gpu_smoke_5090.log",
-        "results/logs/double_buffer_memcheck_5090.log"
+        "results/logs/double_buffer_memcheck_5090.log",
+        "results/logs/double_buffer_racecheck_5090.log"
       ],
-      "validation_limits": "性能 JSON 保留 gpu_measured_not_automatically_validated；小尺寸测试使用零额外共享预留，未逐项覆盖大尺寸与全部预留组合；无 racecheck 记录"
+      "validation_limits": "大尺寸验证限 JSON 记录的确定性输入、N=4096 和五档预留量；Sanitizer 仅记录 N=1/17/33/65，未绑定预留量及完整构建来源；不能外推为全部配置均通过 sanitizer。",
+      "matched_validation": {
+        "schema_version": 2,
+        "status": "gpu_correctness_and_benchmark_passed",
+        "n": 4096,
+        "extra_shared_kib": [
+          0,
+          16,
+          24,
+          32,
+          44
+        ],
+        "passed": 10,
+        "elements_per_comparison": 16777216,
+        "reference": "cublas_fp32_pedantic",
+        "atol": 0.005,
+        "rtol": 0.001,
+        "max_abs_error": 3.027915955e-05,
+        "mismatches": 0,
+        "nonfinite": 0,
+        "performance_records": 5,
+        "speedup_at_32kib": 1.206463997
+      },
+      "integration_suite": {
+        "status": "PASS",
+        "total": 4,
+        "gpu_tests": 3,
+        "host_tests": 1,
+        "skipped": 0,
+        "duration_seconds": 2.316,
+        "evidence_file": "results/summary/double_buffer_integration.log"
+      },
+      "racecheck": {
+        "status": "PASS_RECORDED_SCOPE",
+        "sizes": [
+          1,
+          17,
+          33,
+          65
+        ],
+        "errors": 0,
+        "warnings": 0,
+        "extra_shared_kib": null,
+        "source_build_linkage": "not_recorded",
+        "evidence_file": "results/logs/double_buffer_racecheck_5090.log"
+      }
     }
   },
   "historical_provenance": "当前工作区缺少旧历史 JSON 和原始源码归档，不以其作为当前公开性能结论的依据。",
@@ -102,11 +150,11 @@
     "matmul_spill_20261101_070422.json"
   ],
   "formal_gpu_release_pending": [
-    "补录完整环境、源码提交或差异、构建命令及输出，与 GPU 产物关联",
-    "补录独立 autotune 和 SASS 的实际形状、命令及来源",
+    "基础提交/工作区状态已记录；继续归档实际源码快照或差异（含新增文件）、构建日志和二进制散列",
+    "补录早期独立 autotune 和 SASS 的实际形状、命令及来源",
     "完成最终 Git 差异、GitHub CI 与许可选择"
   ],
-  "review_scope": "本次仅核对当前源码、归档证据并执行本地 CPU 检查，没有重跑 GPU。",
+  "review_scope": "本次核对用户归档 GPU 证据、补录来源信息并同步文档/派生摘要，没有独立重跑 GPU。",
   "offline_validation": {
     "review_date": "2026-11-01",
     "cpu_mapping_tests": {
@@ -127,11 +175,11 @@
     }
   },
   "optional_followups": [
-    "Double Buffer racecheck 与更充分的大尺寸/共享预留组合正确性覆盖",
+    "Double Buffer 更多输入/形状的验证、额外 sanitizer 范围和跨会话稳定性",
     "Matmul stages/BK/tile、Paged KV 配置/规模扫描及汇编",
     "Transpose Shared/Padded 跨会话重复测量"
   ],
-  "evidence_scope_note": "原始 JSON 和日志保持不变；散列核验只标识已审查文件，不能代替源码版本或运行环境关联。",
+  "evidence_scope_note": "Double Buffer 主 JSON 已由用户替换为新验证运行，本次文档同步不改写原始文件；派生散列仅标识当前归档证据，不证明其源码或环境关联。",
   "reviewed_additional_evidence_sha256": {
     "results/logs/gpu_smoke_5090.log": "200690d548a8124dcc9bbab671f5f89626c739ebfb14412236f280ed1795d335",
     "results/logs/double_buffer_memcheck_5090.log": "1fed3d991bbeefd4b03dbe3a8337e1ce2782935b16b20f1e8895a0a8720aaa6f",
@@ -139,6 +187,46 @@
     "results/assembly/matmul_BM128_BN256_BK32_w4_s3.sass": "dd0c43c360a35984ecd4546de39cbea3426318ec6865c0f3b9461bd0d459231c",
     "results/assembly/matmul_BM128_BN256_BK32_w8_s3.sass": "21ae83304b61001c84c01762c9764d8db6a0cb2402b95262c16c0838ab03162d",
     "results/assembly/sass_instruction_counts.txt": "aca0dc54ebcba5e7f943b39ebf6310df3351071b65a13e3cae4a2ab0e1ea3541",
-    "results/logs/matmul_full_5090.log": "0ca50adde5a6957504fa96cfa2d62989b3b8094f8fc471bd60f9fd35e84a52f0"
+    "results/logs/matmul_full_5090.log": "0ca50adde5a6957504fa96cfa2d62989b3b8094f8fc471bd60f9fd35e84a52f0",
+    "results/logs/environment_5090.txt": "004edab919994ca49fe7be143e257dad36b05ca989e7f491c376ae33ba7c21a4",
+    "results/logs/double_buffer_racecheck_5090.log": "40ae59518d184926cde3764cfd24c69f2fe8e50da96f3d1679421b1aa39c04bd",
+    "results/summary/double_buffer_integration.log": "b94aa00dac06df67b6e8ec3b1e99809288bea9fc44c0272c40eba4ab9b3f1986"
+  },
+  "environment_evidence_file": "results/logs/environment_5090.txt",
+  "source_provenance": {
+    "source": "user-provided GPU-machine Git output in conversation",
+    "base_commit": "3eb445b1bd83719205a4e8ea81d093e51eed236e",
+    "dirty_worktree": true,
+    "untracked_source_files": true,
+    "exact_source_snapshot_received": false,
+    "build_log_received": false,
+    "note": "基础提交加文件状态不等于完整实验版本；不以本地当前文件散列倒填运行来源。",
+    "record": "docs/release/SOURCE_PROVENANCE.md"
+  },
+  "user_reported_offline_checks": {
+    "status": "PASS_REPORTED",
+    "host": "RTX 5090 Linux",
+    "commands": [
+      "python scripts/offline_audit.py",
+      "python scripts/release_check.py"
+    ],
+    "raw_logs_received": false,
+    "note": "用户报告通过；GPU 结论另由独立集成日志和验证 JSON 支撑。"
+  },
+  "current_evidence_review": {
+    "date": "2026-11-02",
+    "benchmark_file_count": 4,
+    "additional_file_count": 10,
+    "status": "current_sha256_recorded",
+    "benchmark_sha256_source": "results/summary/computed_rtx5090_summary.json",
+    "note": "offline_validation 中 2026-11-01 的散列统计保留为历史审查记录；本字段对应当前文件。"
+  },
+  "current_local_offline_validation": {
+    "date": "2026-11-02",
+    "release_check_exit_code": 0,
+    "cpu_mapping_passed": 15,
+    "host_numerical_passed": 1,
+    "gpu_integration_skipped": 3,
+    "scope": "本次文档同步后的本地检查；未重跑 GPU。归档的 RTX 5090 集成日志属于独立运行，4/4 无跳过。"
   }
 }

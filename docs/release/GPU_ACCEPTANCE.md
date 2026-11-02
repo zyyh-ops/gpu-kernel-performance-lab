@@ -1,47 +1,37 @@
 # GPU 与发布验收清单
 
-更新日期：2026-11-01。当前 `v0.1.0-rc2-gpu-evidence` 仍为候选版本。勾选项只代表已有归档证据；未勾选项不隐含失败，也不计为通过。
+更新日期：2026-11-02。`v0.1.0-rc2-gpu-evidence` 仍为候选版本。勾选代表已有归档证据，不代表本次文档整理重新执行 GPU。
 
-## A：正确性证据
+## A：已归档验证
 
-- [x] Transpose：9 个尺寸×4 个版本，36 条 PASS；N=8192 benchmark 另有正确性状态。
-- [x] Double Buffer：13 个尺寸×2 个版本，26 条 PASS，覆盖 16B/4B 路径。
-- [x] Double Buffer memcheck：N=1/17/33/65，日志零错误。
-- [x] Paged KV：8 项 GPU 测试通过。
-- [x] Matmul：smoke 3 项测试通过，4096³ spill benchmark 两个配置 PASS。
-- [x] Matmul 独立 autotune：有 PASS 与选择配置日志。
-- [x] Matmul 完整测试：新增[补测日志](../../results/logs/matmul_full_5090.log)，5/5 通过、无跳过，包含大尺寸与 autotune（2.138 秒）。
-- [ ] 构建追溯：保存 nvcc 编译命令/输出，关联运行时源码提交及未提交差异。
-- [ ] 完整环境：补 Python、系统、宿主编译器、驱动包版本和工具版本。
-- [ ] 独立 autotune/SASS：补实际形状、命令与生成环境，避免仅靠文件名推断。
+- [x] Transpose：9 尺寸 × 4 版本，36 条 PASS；N=8192 benchmark 另有正确性状态。
+- [x] Matmul：4096³ spill 两配置 PASS，完整补测 5/5 通过、无跳过。
+- [x] Paged KV：8 项 GPU 测试通过，顺序/随机 benchmark 两组 PASS。
+- [x] Double Buffer 边界：早期 13 尺寸 × 2 实现，26 条 PASS，覆盖 16B/4B 路径。
+- [x] Double Buffer 大尺寸：N=4096、额外预留 0/16/24/32/44 KiB，两实现各自对照 cuBLAS，共 10 条 PASS。
+- [x] Double Buffer 性能：上述五档各有验证后的性能记录；32 KiB 加速比为约 1.21×。
+- [x] Double Buffer 集成测试：4/4 通过，无跳过，含 3 项 GPU 集成测试与 1 项主机数值测试。
+- [x] Double Buffer memcheck：N=1/17/33/65，0 errors。
+- [x] Double Buffer racecheck：N=1/17/33/65，0 errors、0 warnings；日志未绑定完整源码/预留量，不能外推到所有配置。
+- [x] 环境日志：Python、系统、宿主编译器、驱动、GPU、CUDA、PyTorch/Triton、Sanitizer 版本已记录。
+- [x] 基础提交与工作区状态：用户提供 `3eb445b1bd83719205a4e8ea81d093e51eed236e` 和未提交修改清单，已写入[来源记录](SOURCE_PROVENANCE.md)。
 
-证据见 [GPU smoke](../../results/logs/gpu_smoke_5090.log)、[memcheck](../../results/logs/double_buffer_memcheck_5090.log)和 [autotune](../../results/logs/matmul_autotune_5090.log)。日志缺少版本关联不应通过猜测补齐。
+证据入口：[Double Buffer JSON](../../results/summary/double_buffer_4096.json)、[集成日志](../../results/summary/double_buffer_integration.log)、[racecheck](../../results/logs/double_buffer_racecheck_5090.log)、[环境](../../results/logs/environment_5090.txt)、[完整综述](RTX5090_GPU_RESULTS.md)。
 
-## B：核心性能与编译证据
+## B：公开提交前整理
 
-- [x] Matmul 固定 BM128/BN256/BK32/stages3 的 w4/w8 对照，延迟/资源/正确性齐备。
-- [x] Matmul 两份 sm_120 SASS 已归档，LDL/STL 静态计数复核为 403/0。
-- [x] KV 顺序/随机同负载对照，含正确性与计时元数据。
-- [x] Transpose Naive/Shared/Padded 与 Copy 参考已记录。
-- [x] Double Buffer N=4096、5 档额外共享预留的性能已记录。
+- [x] README、案例、概览及派生摘要同步本轮 Double Buffer 数字与状态。
+- [x] 已有本地离线检查通过记录；GPU 机器上 offline_audit/release_check 通过。
+- [x] 最终 Git 差异：包含新增代码、测试和证据，排除无关产物。
+- [x] 最终提交对应的 GitHub CI。
+- [ ] 明确代码来源与许可选择；当前没有 LICENSE。
 
-Double Buffer 的勾选仅表示性能归档完成，原始 JSON 状态仍为 `gpu_measured_not_automatically_validated`。测试模式以小尺寸和零额外预留量验证，不代表大尺寸各组合逐项验算。
+offline/release 检查在 GPU 机器运行也不自动等于 GPU 测试；以具体测试项和 skipped 状态为准。本轮独立集成日志已明确无跳过。
 
-## C：公开提交前检查
+## C：可选深入分析
 
-- [x] 将四个案例、复现说明和审查文档更新为中文当前状态。
-- [x] 公开数值与测量文件核对；区分有效带宽、理论 occupancy、编译指标和静态指令数。
-- [x] 本次本地 15 项 CPU 模型测试通过。
-- [x] 已移除历史 JSON 依赖；本轮完整离线发布检查退出码为 0。
-- [ ] 最终 Git 差异检查：包含被文档引用的证据，排除旧离线日志及无关产物。
-- [ ] 完成最终提交对应的 GitHub CI，不能用旧 PASS 日志代替。
-- [ ] 明确代码来源与许可选择；当前没有 LICENSE 文件。
+- [ ] Double Buffer 更多输入模式、不规则尺寸、额外 sanitizer 路径与跨会话稳定性。
+- [ ] Matmul stages/BK/tile、KV block-f/warps/scale 及 KV 汇编。
+- [ ] Transpose Shared/Padded 小差异的跨会话配对复测。
 
-## D：后续加深验证
-
-- [ ] Double Buffer racecheck；不能由 memcheck 零错误推定通过。
-- [ ] 大尺寸与各额外共享预留配置的适当正确性覆盖。
-- [ ] Matmul stages/BK/tile、KV block-f/warps/scale 和 KV PTX/SASS。
-- [ ] Transpose Shared/Padded 跨会话重复测量。
-
-D 类是继续完善实验的方向，不必为了当前四组已限定范围的观察全部执行。正式验收状态保存在 [RELEASE_STATUS.json](RELEASE_STATUS.json)，具体补测命令见[后续步骤](NEXT_GPU_CHECKLIST.md)。
+这些是扩展研究方向，不要求为当前已验证结论全部完成。后续归档步骤见 [NEXT_GPU_CHECKLIST.md](NEXT_GPU_CHECKLIST.md)。

@@ -1,6 +1,6 @@
 # 源码清单与验证范围
 
-更新日期：2026-11-01。清单依据当前文件实际存在情况编写。源码存在、测试通过和性能得到验证是不同状态。
+更新日期：2026-11-02。清单依据当前文件实际存在情况编写。源码存在、测试通过和性能得到验证是不同状态。
 
 ## 核心实验
 
@@ -9,7 +9,7 @@
 | `triton/matmul.py` | 固定配置 benchmark 两组 PASS；完整补测 5/5 PASS、无跳过；另有独立 autotune PASS 与 w4/w8 SASS | [Matmul 案例](cases/matmul_spill.md) |
 | `triton/paged_kv_write.py` | GPU 8 项测试通过；顺序/随机映射 benchmark 两组 PASS | [Paged KV 案例](cases/paged_kv_write.md) |
 | `cuda/memory/matrix_transpose.cu`、`transpose_kernels.cuh` | 9 个尺寸×4 个版本共 36 条 PASS；N=8192 基准含正确性状态 | [Transpose 案例](cases/cuda_transpose.md) |
-| `cuda/optimization/double_buffer.cu`、`double_buffer_kernels.cuh` | 13 个尺寸×2 个版本共 26 条 PASS；4 个奇数尺寸 memcheck 零错误；N=4096 基准 | [Double Buffer 案例](cases/cuda_double_buffer.md) |
+| `cuda/optimization/double_buffer.cu`、`double_buffer_kernels.cuh` | 旧 smoke 26 条 PASS；N=1/17/33/65 memcheck/racecheck 零错误；新 N=4096 五档 × 两实现 10 条 PASS；集成 4/4 无跳过 | [Double Buffer 案例](cases/cuda_double_buffer.md) |
 
 上述是仓库已归档证据的覆盖范围，尚未形成完整的源码提交—构建—运行关联，详见[验证综述](release/RTX5090_GPU_RESULTS.md)。
 
@@ -29,7 +29,7 @@
 
 - `benchmarks/`：Matmul 参数扫描、Paged KV 对照实验。
 - `scripts/`：汇编检查、autotune、数值诊断、CPU 映射模型和离线检查。
-- `tests/`：两个 Triton GPU 测试文件、三个 CPU 模型测试文件。
+- `tests/`：Triton GPU 测试、CPU 映射模型，以及新增 Double Buffer 主机数值与可选 GPU 集成测试。
 - [triton/requirements.txt](../triton/requirements.txt)：未锁版本的依赖清单。
 - [results/summary](../results/summary/)、[results/logs](../results/logs/)、[results/assembly](../results/assembly/)：当前公开结论的证据。
 - `docs/archive/` 和旧 `results/historical/` 材料在当前工作区缺失；不再宣称仓库保留了完整原始教学源码档案。

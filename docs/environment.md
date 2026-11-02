@@ -1,6 +1,6 @@
 # 环境与复现说明
 
-更新日期：2026-11-01。以下版本来自仓库现有测量文件，不代表本次文档审查重新配置或执行了 GPU 环境。
+更新日期：2026-11-02。版本来自测量文件与新增[环境日志](../results/logs/environment_5090.txt)。本次未重新配置或运行 GPU；补录环境不自动证明每份早期产物的运行环境。
 
 ## 已记录的 RTX 5090 环境
 
@@ -13,8 +13,14 @@
 | nvcc | 12.8 | 两个 CUDA JSON |
 | CUDA Runtime API 版本 | 12080 | 两个 CUDA JSON |
 | CUDA Driver API 支持版本 | 13030 | 两个 CUDA JSON；不是 nvidia-smi 显示的驱动包版本 |
-| Python、操作系统、宿主编译器、驱动包版本 | 未完整归档 | 需补环境日志 |
-| 源码提交号和完整构建命令 | 未与测量文件绑定 | 需补可追溯信息 |
+| Python | 3.12.3 | 环境日志 |
+| 系统内核 | Linux 5.15.0-187-generic，x86_64 | 环境日志 |
+| 宿主编译器 | GCC 13.3.0（Ubuntu 13.3.0-6ubuntu2~24.04） | 环境日志 |
+| 驱动版本 | NVIDIA-SMI / KMD 610.43.02 | 环境日志，与 Driver API 支持版本区分 |
+| NVCC 完整版本 | 12.8.61 | 环境日志 |
+| Compute Sanitizer | 2025.1.0.0 | 环境日志，不自动绑定每份旧 Sanitizer 日志 |
+| 基础提交 | `3eb445b1bd83719205a4e8ea81d093e51eed236e` | 用户提供；工作区有未提交修改 |
+| 完整源码/构建关联 | 仍待快照/差异、编译输出及二进制散列 | 见[来源记录](release/SOURCE_PROVENANCE.md) |
 
 [triton/requirements.txt](../triton/requirements.txt) 已存在，内容为 `torch`、`triton`，没有版本约束。它是依赖名称清单，不是锁文件。不要将上述测量环境当作可在任意机器直接安装的通用依赖组合。
 
@@ -27,7 +33,7 @@ python -m unittest discover -s tests -p 'test_*mapping_cpu.py' -v
 python scripts/release_check.py
 ```
 
-本轮本地复查：完整离线发布检查退出码为 0，映射测试 15/15 通过；脚本已移除旧历史 JSON 依赖。详见[发布审查](release/RELEASE_REVIEW.md)。CPU 检查不运行 GPU kernel。
+本轮本地复查：完整离线发布检查退出码为 0，映射测试 15/15 通过；脚本已移除旧历史 JSON 依赖。详见[发布审查](release/RELEASE_REVIEW.md)。默认未设置 `DOUBLE_BUFFER_BINARY` 时 GPU 集成测试跳过；新增主机数值测试需 g++/clang++。独立 GPU 集成记录已 4/4 无跳过，不能与离线 gate 混为同一个结论。
 
 ## GPU 构建与测试
 
@@ -41,7 +47,7 @@ make cuda-transpose-bench CUDA_ARCH=sm_120
 make cuda-double-buffer-bench CUDA_ARCH=sm_120
 ```
 
-CUDA benchmark 的默认输出路径固定，重跑会覆盖对应 JSON；应先保留旧记录或使用程序的 `--json` 指定新文件。更换 `CUDA_ARCH` 后，Make 不会仅因变量变化自动重编译已有目标；请用 `make -B gpu-smoke CUDA_ARCH=sm_120` 等方式强制重建。
+Transpose 默认输出仍需自行防覆盖；Double Buffer 已拒绝覆盖现有 JSON，应以 `DOUBLE_BUFFER_JSON=results/summary/double_buffer_next_run.json` 或 `--json` 指定新路径。更换 `CUDA_ARCH` 后，Make 不会仅因变量变化自动重编译已有目标；请用 `make -B gpu-smoke CUDA_ARCH=sm_120` 等方式强制重建。
 
 默认 smoke 未设置开关时仍会跳过 Matmul 的两个可选用例；本轮显式启用后的[完整补测](../results/logs/matmul_full_5090.log)已 5/5 通过、无跳过。复现命令见[后续验证步骤](release/NEXT_GPU_CHECKLIST.md)。
 

@@ -20,6 +20,7 @@ REQUIRED_PY = [
     "tests/test_transpose_mapping_cpu.py",
     "scripts/double_buffer_mapping_model.py",
     "tests/test_double_buffer_mapping_cpu.py",
+    "tests/test_double_buffer_validation.py",
 ]
 REQUIRED_DOCS = [
     "README.md",
@@ -30,6 +31,7 @@ REQUIRED_DOCS = [
     "docs/cases/paged_kv_write.md",
     "docs/cases/cuda_transpose.md",
     "docs/cases/cuda_double_buffer.md",
+    "docs/double-buffer-validation.md",
 ]
 PENDING_SOURCES = [
     "triton/softmax.py",
@@ -54,7 +56,7 @@ def main():
         if not (ROOT / name).is_file():
             problems.append(f"MISSING documentation: {name}")
 
-    for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "cuda/optimization/double_buffer.cu", "cuda/optimization/double_buffer_kernels.cuh", "Makefile"]:
+    for name in ["cuda/memory/matrix_transpose.cu", "cuda/memory/transpose_kernels.cuh", "cuda/optimization/double_buffer.cu", "cuda/optimization/double_buffer_kernels.cuh", "cuda/optimization/gemm_validation.h", "tests/gemm_validation_host.cpp", "Makefile"]:
         if not (ROOT / name).is_file():
             problems.append(f"MISSING CUDA candidate: {name}")
         else:
